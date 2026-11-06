@@ -1,0 +1,293 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Агент</title>
+<style>
+:root { color-scheme: dark;
+  --bg: #15171c; --panel: #1d2027; --panel2: #252932; --line: #323744; --text: #e6e8ee; --dim: #9aa1b2;
+  --accent: #6aa8ff; --user: #2b4a78; --ok: #4fbf7a; --warn: #e3b341; --bad: #e06464; }
+* { box-sizing: border-box; }
+html, body { height: 100%; margin: 0; }
+body { background: var(--bg); color: var(--text); font: 15px/1.45 "Segoe UI", system-ui, sans-serif; display: flex; overflow: hidden; }
+button { font: inherit; color: var(--text); background: var(--panel2); border: 1px solid var(--line); border-radius: 6px; padding: 5px 10px; cursor: pointer; }
+button:hover { border-color: var(--accent); }
+button.primary { background: var(--accent); color: #0b1220; border-color: var(--accent); font-weight: 600; }
+button.danger { border-color: var(--bad); color: var(--bad); }
+button:disabled { opacity: .45; cursor: default; }
+#side { width: 240px; flex: none; background: var(--panel); border-right: 1px solid var(--line); display: flex; flex-direction: column; }
+#side .new { padding: 10px; display: flex; flex-direction: column; gap: 6px; }
+#chatlist { flex: 1; overflow-y: auto; padding: 0 6px 10px; }
+.chat-item { display: flex; align-items: center; gap: 6px; padding: 7px 8px; border-radius: 6px; cursor: pointer; color: var(--dim); }
+.chat-item:hover, .chat-item.cur { background: var(--panel2); }
+.chat-item.cur { color: var(--text); }
+.chat-item .name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.chat-item .del { visibility: hidden; border: none; background: none; padding: 0 4px; color: var(--dim); }
+.chat-item:hover .del { visibility: visible; }
+#services { padding: 10px; border-top: 1px solid var(--line); font-size: 13px; color: var(--dim); }
+#update { padding: 0 10px 10px; font-size: 12px; color: var(--dim); display: flex; align-items: center; gap: 8px; }
+#update button { font-size: 12px; padding: 3px 8px; }
+#update button.has { border-color: var(--ok); color: var(--ok); }
+.dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 5px; background: var(--bad); }
+.dot.on { background: var(--ok); }
+#main { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+#head { display: flex; align-items: center; gap: 10px; padding: 10px 16px; border-bottom: 1px solid var(--line); background: var(--panel); }
+#title { flex: 1; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+label.toggle { font-size: 13px; color: var(--dim); display: flex; align-items: center; gap: 5px; cursor: pointer; }
+#log { flex: 1; overflow-y: auto; padding: 18px 22px 10px; }
+#empty { color: var(--dim); text-align: center; margin-top: 16vh; line-height: 1.8; }
+.ev { margin: 0 0 12px; max-width: 900px; }
+.msg { padding: 9px 13px; border-radius: 10px; word-wrap: break-word; }
+.ev-user { margin-left: auto; max-width: 70%; }
+.ev-user .msg { background: var(--user); white-space: pre-wrap; }
+.ev-assistant .msg { background: var(--panel); border: 1px solid var(--line); }
+.msg p { margin: 0 0 6px; } .msg p:last-child { margin: 0; }
+.msg ul { margin: 2px 0 6px; padding-left: 20px; }
+.msg code { background: #0f1115; padding: 1px 5px; border-radius: 4px; font: 13px Consolas, monospace; }
+.msg pre { background: #0f1115; padding: 8px 10px; border-radius: 6px; overflow-x: auto; font: 13px/1.4 Consolas, monospace; }
+.msg h3 { margin: 6px 0 4px; font-size: 15px; }
+.tool { border: 1px solid var(--line); border-radius: 8px; background: var(--panel); font-size: 14px; }
+.tool .head { padding: 7px 11px; color: var(--dim); display: flex; gap: 8px; align-items: center; }
+.tool .head span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.info { border: 1px solid var(--line); border-radius: 8px; padding: 7px 11px; color: var(--dim); }
+.info.error { border-color: var(--bad); color: var(--bad); }
+.spin { width: 11px; height: 11px; border: 2px solid var(--line); border-top-color: var(--accent); border-radius: 50%;
+  display: inline-block; animation: spin .8s linear infinite; flex: none; }
+@keyframes spin { to { transform: rotate(360deg); } }
+.media { display: flex; flex-wrap: wrap; gap: 8px; padding: 8px 11px 10px; border-top: 1px solid var(--line); }
+.media img { height: 220px; max-width: 100%; border-radius: 6px; cursor: zoom-in; background: #0f1115; object-fit: contain; }
+#bottom { border-top: 1px solid var(--line); background: var(--panel); padding: 8px 16px 12px; }
+#status { display: none; align-items: center; gap: 10px; font-size: 13px; color: var(--dim); margin-bottom: 7px; }
+#status.on { display: flex; }
+#status .text { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#inputrow { display: flex; gap: 8px; align-items: flex-end; }
+#input { flex: 1; resize: none; min-height: 42px; max-height: 220px; padding: 10px 12px; border-radius: 8px; border: 1px solid var(--line);
+  background: var(--bg); color: var(--text); font: inherit; outline: none; overflow-y: hidden; }
+#input:focus { border-color: var(--accent); }
+#lightbox { position: fixed; inset: 0; background: rgba(0,0,0,.88); display: none; align-items: center; justify-content: center; z-index: 60; cursor: zoom-out; }
+#lightbox.on { display: flex; }
+#lightbox img { max-width: 96vw; max-height: 92vh; object-fit: contain; }
+#lightbox .cap { position: fixed; bottom: 10px; left: 0; right: 0; text-align: center; color: var(--dim); font-size: 13px; }
+#lightbox .nav { position: fixed; top: 50%; transform: translateY(-50%); font-size: 30px; background: rgba(0,0,0,.4); border: none; padding: 10px 16px; }
+#lightbox .prev { left: 10px; } #lightbox .next { right: 10px; }
+</style>
+</head>
+<body>
+<div id="side">
+  <div class="new">
+    <button class="primary" id="newChat">+ Новая беседа</button>
+    <button id="folderBtn">Папка с картинками</button>
+  </div>
+  <div id="chatlist"></div>
+  <div id="services"></div>
+  <div id="update"><span id="version"></span><button id="updateBtn" title="Проверить, есть ли новая версия окна агента">Обновления</button></div>
+</div>
+<div id="main">
+  <div id="head">
+    <div id="title" title="Двойной щелчок — переименовать">Агент</div>
+    <label class="toggle" title="Модель сначала рассуждает: дольше, иногда точнее"><input type="checkbox" id="think"> рассуждения</label>
+  </div>
+  <div id="log"></div>
+  <div id="bottom">
+    <div id="status"><span class="spin"></span><span class="text" id="statusText"></span><button class="danger" id="stopBtn">Стоп</button></div>
+    <div id="inputrow">
+      <textarea id="input" rows="1" placeholder="Напиши сообщение… (Enter — отправить, Shift+Enter — новая строка)"></textarea>
+      <button class="primary" id="sendBtn">Отправить</button>
+    </div>
+  </div>
+</div>
+<div id="lightbox"><button class="nav prev">‹</button><img alt=""><button class="nav next">›</button><div class="cap"></div></div>
+<script>
+const TOKEN = "__TOKEN__";
+const $ = s => document.querySelector(s);
+let cur = new URLSearchParams(location.search).get("chat") || localStorage.getItem("chat") || "", ver = -1, poll = null, lastChat = null, rendered = [];
+let gallery = [], galleryIdx = 0;
+const EMPTY = 'Привет! Можно просто поговорить или попросить нарисовать картинку.<br>Например: <i>«нарисуй рыжую кошку на подоконнике, вечер, уютно»</i>';
+
+function api(path, opts = {}) {
+  opts.headers = Object.assign({"X-Token": TOKEN}, opts.headers || {});
+  if (opts.json !== undefined) { opts.body = JSON.stringify(opts.json); opts.headers["Content-Type"] = "application/json"; delete opts.json; }
+  return fetch(path, opts).then(async r => { const d = await r.json().catch(() => ({})); if (!r.ok) throw new Error(d.error || ("ошибка " + r.status)); return d; });
+}
+const fileUrl = p => "/file?t=" + encodeURIComponent(TOKEN) + "&path=" + encodeURIComponent(p);
+const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"}[c]));
+
+function md(text) {
+  const blocks = [];
+  let s = String(text || "").replace(/```[^\n]*\n?([\s\S]*?)```/g, (_, code) => { blocks.push(code); return `\u0000${blocks.length - 1}\u0000`; });
+  s = esc(s);
+  const out = []; let list = null;
+  for (const raw of s.split("\n")) {
+    const line = raw.trimEnd(), li = line.match(/^\s*(?:[-*•]|\d+[.)])\s+(.*)$/);
+    if (li) { (list = list || []).push(li[1]); continue; }
+    if (list) { out.push("<ul>" + list.map(x => `<li>${x}</li>`).join("") + "</ul>"); list = null; }
+    const h = line.match(/^#{1,4}\s+(.*)$/);
+    if (h) out.push(`<h3>${h[1]}</h3>`); else if (line.trim()) out.push(`<p>${line}</p>`);
+  }
+  if (list) out.push("<ul>" + list.map(x => `<li>${x}</li>`).join("") + "</ul>");
+  return out.join("").replace(/\*\*(.+?)\*\*/g, "<b>$1</b>").replace(/`([^`]+)`/g, "<code>$1</code>")
+    .replace(/\u0000(\d+)\u0000/g, (_, i) => `<pre>${esc(blocks[+i])}</pre>`);
+}
+
+function evHtml(ev) {
+  if (ev.type === "user") return `<div class="msg">${esc(ev.text)}</div>`;
+  if (ev.type === "assistant") return `<div class="msg">${md(ev.text)}</div>`;
+  if (ev.type === "tool") {
+    const running = ev.result === null || ev.result === undefined;
+    const what = ev.name === "generate_image" ? "Рисую: " + (ev.args?.prompt || "") : ev.name;
+    const err = !running && !(ev.files || []).length ? `<div class="head" style="color:var(--bad)">${esc(ev.result)}</div>` : "";
+    return `<div class="tool"><div class="head">${running ? '<span class="spin"></span>' : "🎨"}<span title="${esc(ev.args?.prompt || "")}">${esc(what)}</span></div>${err}` +
+      ((ev.files || []).length ? `<div class="media">${ev.files.map(p => `<img src="${fileUrl(p)}" data-path="${esc(p)}">`).join("")}</div>` : "") + `</div>`;
+  }
+  return `<div class="info ${ev.type === "error" ? "error" : ""}">${esc(ev.text)}</div>`;
+}
+
+function renderChat(chat) {
+  const log = $("#log");
+  if (!chat) { log.innerHTML = `<div id="empty">${EMPTY}</div>`; rendered = []; lastChat = null; return; }
+  if (lastChat !== chat.id) { log.innerHTML = ""; rendered = []; lastChat = chat.id; }
+  const nearBottom = log.scrollHeight - log.scrollTop - log.clientHeight < 120;
+  if (!chat.events.length) { log.innerHTML = `<div id="empty">${EMPTY}</div>`; rendered = []; return; }
+  log.querySelector("#empty")?.remove();
+  chat.events.forEach((ev, i) => {
+    const key = JSON.stringify(ev);
+    if (rendered[i] === key) return;
+    rendered[i] = key;
+    let node = log.querySelector(`.ev[data-k="${i}"]`);
+    if (!node) { node = document.createElement("div"); node.dataset.k = i; log.appendChild(node); }
+    node.className = "ev ev-" + ev.type;
+    node.innerHTML = evHtml(ev);
+  });
+  if (nearBottom) log.scrollTop = log.scrollHeight;
+  gallery = [...log.querySelectorAll(".media img")];
+}
+
+async function loop() {
+  while (true) {
+    const ctl = new AbortController(); poll = ctl;
+    try {
+      const d = await api(`/api/state?v=${ver}&chat=${encodeURIComponent(cur)}`, {signal: ctl.signal});
+      const changed = d.v !== ver; ver = d.v;
+      if (d.chat === null && cur) { cur = ""; localStorage.removeItem("chat"); }
+      $("#status").classList.toggle("on", !!d.status.busy);
+      $("#statusText").textContent = d.status.busy ? (d.status.busy === cur ? "" : "занят в другой беседе: ") + (d.status.progress || "работает…") : "";
+      renderChat(d.chat);
+      $("#title").textContent = d.chat ? d.chat.title : "Агент";
+      if (d.chat) $("#think").checked = !!d.chat.think;
+      if (changed) loadChats();
+    } catch (e) {
+      if (e.name === "AbortError") continue;
+      $("#status").classList.add("on");
+      $("#statusText").textContent = "нет связи с агентом — запусти его ярлыком «Агент» на рабочем столе";
+      await new Promise(r => setTimeout(r, 3000));
+    }
+  }
+}
+function refresh() { ver = -1; poll?.abort(); }
+
+async function loadChats() {
+  const list = await api("/api/chats").catch(() => []);
+  $("#chatlist").innerHTML = list.map(c => `<div class="chat-item ${c.id === cur ? "cur" : ""}" data-id="${c.id}"><span class="name" title="${esc(c.title)}">${esc(c.title)}</span><button class="del" title="Удалить">✕</button></div>`).join("")
+    || '<div style="color:var(--dim);padding:8px">Бесед пока нет</div>';
+}
+function select(id) { cur = id; id ? localStorage.setItem("chat", id) : localStorage.removeItem("chat"); lastChat = null; refresh(); loadChats(); $("#input").focus(); }
+$("#newChat").onclick = async () => { const c = await api("/api/chats", {method: "POST", json: {}}); select(c.id); };
+$("#folderBtn").onclick = () => api("/api/folder", {method: "POST", json: {}});
+$("#chatlist").onclick = async e => {
+  const item = e.target.closest(".chat-item"); if (!item) return;
+  if (e.target.classList.contains("del")) {
+    if (!confirm("Удалить беседу?")) return;
+    try { await api("/api/chats?chat=" + item.dataset.id, {method: "DELETE"}); if (item.dataset.id === cur) select(""); else loadChats(); }
+    catch (err) { alert(err.message); }
+    return;
+  }
+  select(item.dataset.id);
+};
+$("#title").ondblclick = async () => {
+  if (!cur) return;
+  const t = prompt("Название беседы:", $("#title").textContent);
+  if (t) { await api("/api/rename", {method: "POST", json: {chat: cur, title: t}}); refresh(); }
+};
+$("#think").onchange = e => cur && api("/api/think", {method: "POST", json: {chat: cur, think: e.target.checked}});
+
+async function send() {
+  const box = $("#input"), text = box.value.trim();
+  if (!text) return;
+  if (!cur) { const c = await api("/api/chats", {method: "POST", json: {}}); cur = c.id; localStorage.setItem("chat", cur); lastChat = null; }
+  try { await api("/api/send", {method: "POST", json: {chat: cur, text}}); box.value = ""; autosize(); refresh(); }
+  catch (e) { alert(e.message); }
+}
+$("#sendBtn").onclick = send;
+$("#input").addEventListener("keydown", e => { if (e.key === "Enter" && !e.shiftKey && !e.isComposing) { e.preventDefault(); send(); } });
+function autosize() { const b = $("#input"); b.style.height = "auto"; b.style.height = Math.min(b.scrollHeight + 2, 220) + "px"; b.style.overflowY = b.scrollHeight > 218 ? "auto" : "hidden"; }
+$("#input").addEventListener("input", autosize);
+$("#stopBtn").onclick = () => api("/api/stop", {method: "POST", json: {}});
+
+$("#log").addEventListener("click", e => { const img = e.target.closest(".media img"); if (img) { galleryIdx = gallery.indexOf(img); showLight(); } });
+function showLight() {
+  const img = gallery[galleryIdx]; if (!img) return;
+  $("#lightbox img").src = img.src;
+  $("#lightbox .cap").textContent = `${galleryIdx + 1} / ${gallery.length} — ←/→ листать, Esc закрыть. Все картинки — кнопка «Папка с картинками».`;
+  $("#lightbox").classList.add("on");
+}
+const step = d => { galleryIdx = (galleryIdx + d + gallery.length) % gallery.length; showLight(); };
+$("#lightbox").onclick = e => { if (e.target.classList.contains("prev")) step(-1); else if (e.target.classList.contains("next")) step(1); else $("#lightbox").classList.remove("on"); };
+document.addEventListener("keydown", e => {
+  if (!$("#lightbox").classList.contains("on")) return;
+  if (e.key === "Escape") $("#lightbox").classList.remove("on");
+  if (e.key === "ArrowLeft") step(-1);
+  if (e.key === "ArrowRight") step(1);
+});
+
+async function services() {
+  try {
+    const s = await api("/api/services");
+    $("#services").innerHTML = `<div><span class="dot ${s.ollama ? "on" : ""}"></span>Модель чата</div><div><span class="dot ${s.comfy ? "on" : ""}"></span>Рисование</div>`;
+  } catch (e) { $("#services").textContent = "агент не отвечает"; }
+}
+services(); setInterval(services, 15000);
+
+// ---------- обновления ----------
+let updateInfo = null;
+async function checkUpdate(quiet) {
+  const btn = $("#updateBtn");
+  if (!quiet) { btn.disabled = true; btn.textContent = "Проверяю…"; }
+  try {
+    updateInfo = await api("/api/update/check");
+    $("#version").textContent = "Версия " + updateInfo.current;
+    btn.classList.toggle("has", !!updateInfo.available);
+    btn.textContent = updateInfo.available ? "Есть обновление!" : "Обновления";
+    if (!quiet) {
+      if (updateInfo.error) alert("Не удалось проверить обновления: " + updateInfo.error.replace(/^не удалось проверить обновления: /, ""));
+      else if (!updateInfo.available) alert(`Стоит последняя версия (${updateInfo.current}).`);
+      else askUpdate();
+    }
+  } catch (e) { if (!quiet) alert(e.message); }
+  finally { btn.disabled = false; }
+}
+async function askUpdate() {
+  const u = updateInfo;
+  if (!confirm(`Есть новая версия ${u.latest} (сейчас ${u.current}).\n\nЧто нового:\n${u.notes || "—"}\n\n` +
+               "Обновить? Беседы и картинки сохранятся. Окно агента перезапустится само.")) return;
+  const btn = $("#updateBtn");
+  btn.disabled = true; btn.textContent = "Обновляю…";
+  try {
+    const r = await api("/api/update/apply", {method: "POST", json: {}});
+    $("#status").classList.add("on");
+    $("#statusText").textContent = r.message + " — перезапускаю окно…";
+    for (let i = 0; i < 40; i++) {  // ждём новый сервер и открываем страницу заново (новый ключ доступа)
+      await new Promise(res => setTimeout(res, 1500));
+      try { const p = await fetch("/", {cache: "no-store"}); if (p.ok && i > 1) { location.reload(); return; } } catch (e) {}
+    }
+    alert("Окно не перезапустилось само — закрой чёрное окно агента и запусти ярлык «Агент».");
+  } catch (e) { alert("Обновление не установлено: " + e.message); btn.disabled = false; btn.textContent = "Обновления"; }
+}
+$("#updateBtn").onclick = () => (updateInfo && updateInfo.available) ? askUpdate() : checkUpdate(false);
+api("/api/version").then(v => $("#version").textContent = "Версия " + v.version).catch(() => {});
+setTimeout(() => checkUpdate(true), 3000);  // тихо проверить при открытии: кнопка подсветится, если есть новая версия
+
+loadChats(); loop(); autosize();
+</script>
+</body>
+</html>

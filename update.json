@@ -1,0 +1,60 @@
+{
+ "version": "1.1.0",
+ "notes": "Агент доводит длинные задачи до конца: до 15 шагов, отчёт «что сделано / что осталось» и «продолжай»; защита от зацикливания; кнопка «Обновления».",
+ "files": [
+  {
+   "path": "app/agent_lite.py",
+   "repo": "files/app/agent_lite.py",
+   "sha256": "9e9acee8e62da4cdc954c6dfdbea6bbb2bfbafcd88f7b6c8e155e2785c1a35a8",
+   "size": 12766
+  },
+  {
+   "path": "app/app.html",
+   "repo": "files/app/app.html",
+   "sha256": "40e0648190b4fd3f6874fe7f6f6a3077b24021e05b8187cf10ea05f0d3babd1d",
+   "size": 18965
+  },
+  {
+   "path": "app/app.py",
+   "repo": "files/app/app.py",
+   "sha256": "44bbe33a1aa506983f28a7bfa43593031d7fc85e24d9f15d3edf3162955e8aa1",
+   "size": 15077
+  },
+  {
+   "path": "app/services.ps1",
+   "repo": "files/app/services.ps1",
+   "sha256": "5f99072be15f421a806f56e2de42765653ea9f37623a44fe737efd6bc867cbf8",
+   "size": 1620
+  },
+  {
+   "path": "app/updater.py",
+   "repo": "files/app/updater.py",
+   "sha256": "eec87b9c2c54b019f8e6a1d4d8523d94edcdeca2077088788d1fe56ac7083129",
+   "size": 4860
+  },
+  {
+   "path": "start.bat",
+   "repo": "files/start.bat",
+   "sha256": "9d03c011f094a9538c7f98d7bf6be078f9560d7f43d7c04eb73804a0072e212a",
+   "size": 240
+  },
+  {
+   "path": "uninstall.bat",
+   "repo": "files/uninstall.bat",
+   "sha256": "40ce18c8c407a9942a56ab920a7a3a615454673641d86e43505c7aeb28e832cd",
+   "size": 109
+  },
+  {
+   "path": "uninstall.ps1",
+   "repo": "files/uninstall.ps1",
+   "sha256": "f5e1439ec23e74bb0a221b973be8e226db2701f7abd1e1aa9745fa4bd5df341d",
+   "size": 2582
+  },
+  {
+   "path": "README.txt",
+   "repo": "README.txt",
+   "sha256": "68870b71788ff47519b1b8fea550a58d1f541092a85e7caf05c24d8374da03ec",
+   "size": 3022
+  }
+ ]
+}
