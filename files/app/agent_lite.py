@@ -2,7 +2,7 @@
 # Других возможностей нет: агент не выполняет команды и не трогает файлы на компьютере.
 import json, pathlib, random, time, urllib.error, urllib.parse, urllib.request
 
-VERSION = "1.1.0"  # версия окна агента; make_release.py ставит её сам
+VERSION = "1.1.1"  # версия окна агента; make_release.py ставит её сам
 APP = pathlib.Path(__file__).parent
 ROOT = APP.parent
 IMAGES_DIR = ROOT / "images"
@@ -11,7 +11,8 @@ CONFIG = {
     "comfy": "http://127.0.0.1:8188",
     "model": "agent-chat",
     "temperature": 0.7,
-    "num_ctx": 8192,
+    "num_ctx": 16384,        # память модели в токенах (16k целиком на видеокарте 12 ГБ)
+    "reply_reserve": 3072,   # всегда оставлять на ответ
     "max_steps": 15,         # вызовов инструментов подряд на одно сообщение (потом — отчёт и «продолжай»)
     "same_call_limit": 3,    # тот же вызов в третий раз за сообщение — цикл, не выполняется
     "keep_full_results": 6,  # последние ответы инструментов — целиком, старые сокращаются
@@ -136,19 +137,43 @@ TOOLS = [{"type": "function", "function": {
         "required": ["prompt"]}}}]
 
 SYSTEM = """Ты дружелюбный помощник на компьютере пользователя. Отвечай по-русски, понятно и по делу.
+О себе: ты локальная языковая модель в Ollama на этом компьютере (без облака); картинки рисует ComfyUI здесь же.
 Ты умеешь разговаривать и рисовать картинки инструментом generate_image. Других возможностей у тебя нет:
 ты не выходишь в интернет, не видишь файлы и не управляешь компьютером — если просят такое, честно скажи об этом.
 Когда просят нарисовать — сразу вызывай generate_image (не обещай «сейчас нарисую»), промпт пиши по-английски.
 Картинка появится в окне сама, ссылку на файл повторять не нужно. Не выдумывай свежие новости и текущие данные."""
 
+_ctx = {"chars_per_token": 3.2}  # замер на русских беседах ~3.3; уточняется по каждому ответу Ollama
+
+def fit_context(messages, tools):
+    """Обрезать историю ПО ТОКЕНАМ, чтобы на ответ всегда оставалось reply_reserve токенов (иначе ответ обрывается
+    на полуслове). Выкидываются самые старые реплики целиком; текущая — никогда. Возвращает число символов."""
+    fixed = len(json.dumps(tools, ensure_ascii=False)) if tools else 0
+    size = lambda: fixed + len(json.dumps(messages, ensure_ascii=False))
+    budget = (CONFIG["num_ctx"] - CONFIG["reply_reserve"]) * _ctx["chars_per_token"]
+    while size() > budget:
+        users = [i for i, m in enumerate(messages) if i > 0 and m.get("role") == "user"]
+        if len(users) < 2:
+            break
+        del messages[1:users[1]]
+    return size()
+
 def chat(messages, think=False, use_tools=True):
-    body = {"model": CONFIG["model"], "messages": messages, "tools": TOOLS, "stream": False, "think": bool(think),
+    tools = TOOLS if use_tools else None
+    sent = fit_context(messages, tools)
+    body = {"model": CONFIG["model"], "messages": messages, "tools": tools, "stream": False, "think": bool(think),
             "options": {"temperature": CONFIG["temperature"], "num_ctx": CONFIG["num_ctx"]}}
     if not use_tools:
         body.pop("tools")
     for attempt in range(3):
         try:
-            return http(f"{CONFIG['ollama']}/api/chat", body, timeout=600)["message"]
+            r = http(f"{CONFIG['ollama']}/api/chat", body, timeout=600)
+            if r.get("prompt_eval_count"):
+                _ctx["chars_per_token"] = max(1.5, min(5.0, sent / r["prompt_eval_count"]))
+            msg = r["message"]
+            if r.get("done_reason") == "length":
+                msg["content"] = (msg.get("content") or "") + "\n\n…(ответ оборвался. Напиши «продолжай» — допишу.)"
+            return msg
         except urllib.error.HTTPError:
             if attempt == 2:
                 raise
