@@ -14,7 +14,13 @@ Get-CimInstance Win32_Process -Filter "Name='python.exe'" | Where-Object { $_.Ex
     ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
 
 $ollama = Join-Path $env:LOCALAPPDATA "Programs\Ollama\ollama.exe"
-if (Test-Path $ollama) { & $ollama rm agent-chat 2>$null | Out-Null }
+if (Test-Path $ollama) {
+    # модели, которые ставил установщик агента (+ старая agent-chat из версий до 1.2.0)
+    $own = @("agent-chat")
+    $list = Join-Path $Root "models_installed.txt"
+    if (Test-Path $list) { $own += Get-Content $list -Encoding UTF8 | Where-Object { $_.Trim() } }
+    foreach ($m in ($own | Select-Object -Unique)) { & $ollama rm $m 2>$null | Out-Null }
+}
 
 $lnk = Join-Path ([Environment]::GetFolderPath("Desktop")) "Агент.lnk"
 Remove-Item $lnk -Force -ErrorAction SilentlyContinue

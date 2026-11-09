@@ -1,24 +1,24 @@
 {
- "version": "1.1.1",
- "notes": "Ответы больше не обрываются на полуслове в длинных беседах: память модели 16k токенов и обрезка истории по токенам.",
+ "version": "1.2.0",
+ "notes": "Две модели Gemma 4 12B: «работа» (аккуратная и быстрая) и «без цензуры» — выбор в шапке окна у каждой беседы; недостающие модели окно докачает само. Защита от зацикливания и ложного «готово».",
  "files": [
   {
    "path": "app/agent_lite.py",
    "repo": "files/app/agent_lite.py",
-   "sha256": "b0b30e6d66bf31740c78051c6c0a570304c38f52cebfbe2bb8471f9018fa7c4f",
-   "size": 14624
+   "sha256": "6a4397524bed3cb011995986c0a7fa450f9c9ec59fa21ad2b74c608e998b5d7c",
+   "size": 19628
   },
   {
    "path": "app/app.html",
    "repo": "files/app/app.html",
-   "sha256": "40e0648190b4fd3f6874fe7f6f6a3077b24021e05b8187cf10ea05f0d3babd1d",
-   "size": 18965
+   "sha256": "a2b389beea2aa53a2fe569ea9b119ac398347cf6a2f1e28b25b91033a3698394",
+   "size": 21058
   },
   {
    "path": "app/app.py",
    "repo": "files/app/app.py",
-   "sha256": "44bbe33a1aa506983f28a7bfa43593031d7fc85e24d9f15d3edf3162955e8aa1",
-   "size": 15077
+   "sha256": "03795a0ecc78df1f0489974fb2d940dacc548eb61bfad99e2ae37781eb577cae",
+   "size": 17674
   },
   {
    "path": "app/services.ps1",
@@ -47,14 +47,14 @@
   {
    "path": "uninstall.ps1",
    "repo": "files/uninstall.ps1",
-   "sha256": "f5e1439ec23e74bb0a221b973be8e226db2701f7abd1e1aa9745fa4bd5df341d",
-   "size": 2582
+   "sha256": "d3f1a43f6d6033ac119e0b50bab314b7b4d0b0305b6e9547d2fa124f7acfb81c",
+   "size": 2951
   },
   {
    "path": "README.txt",
    "repo": "README.txt",
-   "sha256": "68870b71788ff47519b1b8fea550a58d1f541092a85e7caf05c24d8374da03ec",
-   "size": 3022
+   "sha256": "fef83a662e0bcedc701a76a8e6fb7d1e43fe41b99aa4ec4b97b07c60c813d934",
+   "size": 3664
   }
  ]
 }

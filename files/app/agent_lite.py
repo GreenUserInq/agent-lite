@@ -1,15 +1,22 @@
 # Ядро агента: чат с моделью в Ollama + рисование картинок через ComfyUI (модель Anima).
 # Других возможностей нет: агент не выполняет команды и не трогает файлы на компьютере.
-import json, pathlib, random, time, urllib.error, urllib.parse, urllib.request
+import json, pathlib, random, re, time, urllib.error, urllib.parse, urllib.request
 
-VERSION = "1.1.1"  # версия окна агента; make_release.py ставит её сам
+VERSION = "1.2.0"  # версия окна агента; make_release.py ставит её сам
 APP = pathlib.Path(__file__).parent
 ROOT = APP.parent
 IMAGES_DIR = ROOT / "images"
 CONFIG = {
     "ollama": "http://127.0.0.1:11434",
     "comfy": "http://127.0.0.1:8188",
-    "model": "agent-chat",
+    "model": "gemma4:12b",   # модель по умолчанию для новых бесед (первая установленная из models)
+    # модели на выбор (список в шапке окна); недостающие окно докачивает само через Ollama
+    "models": [
+        {"id": "gemma4:12b", "name": "Gemma 4 12B — работа", "pull": True},
+        {"id": "huihui_ai/gemma-4-abliterated:12b", "name": "Gemma 4 12B — без цензуры", "pull": True,
+         "options": {"repeat_penalty": 1.1, "top_k": 64}},
+        {"id": "agent-chat", "name": "Qwen3.5 Defiant (старая)", "pull": False},  # у ставивших раньше 1.2.0
+    ],
     "temperature": 0.7,
     "num_ctx": 16384,        # память модели в токенах (16k целиком на видеокарте 12 ГБ)
     "reply_reserve": 3072,   # всегда оставлять на ответ
@@ -81,11 +88,66 @@ def run_comfy(wf, timeout=900):
     return out
 
 def unload_llm():
-    """Освободить видеопамять от модели чата перед рисованием (обе вместе не помещаются)."""
+    """Освободить видеопамять перед рисованием: выгрузить ВСЕ загруженные модели (в беседах могут быть разные)."""
     try:
-        http(f"{CONFIG['ollama']}/api/generate", {"model": CONFIG["model"], "keep_alive": 0}, timeout=60)
+        loaded = [m["name"] for m in http(f"{CONFIG['ollama']}/api/ps", timeout=10).get("models", [])]
     except Exception:
-        pass
+        loaded = [current["model"]]
+    for name in loaded:
+        try:
+            http(f"{CONFIG['ollama']}/api/generate", {"model": name, "keep_alive": 0}, timeout=60)
+        except Exception:
+            pass
+
+# ---------- Модели: какие установлены, выбор, докачка ----------
+
+current = {"model": CONFIG["model"]}          # модель текущей беседы (окно ставит перед ответом)
+pulling = {"model": "", "percent": 0.0, "error": ""}  # что сейчас докачивается
+
+def installed_models():
+    try:
+        return {m["name"] for m in http(f"{CONFIG['ollama']}/api/tags", timeout=10).get("models", [])}
+    except Exception:
+        return set()
+
+def _has(names, mid):
+    return mid in names or (":" not in mid and f"{mid}:latest" in names)
+
+def available_models():
+    """Модели из списка, которые уже стоят в Ollama — их и показывает выпадающий список."""
+    names = installed_models()
+    return [m for m in CONFIG["models"] if _has(names, m["id"])]
+
+def default_model():
+    av = [m["id"] for m in available_models()]
+    return CONFIG["model"] if CONFIG["model"] in av else (av[0] if av else CONFIG["model"])
+
+def model_options(mid):
+    return next((m.get("options") or {} for m in CONFIG["models"] if m["id"] == mid), {})
+
+def pull_missing():
+    """Докачать недостающие модели (по очереди, через Ollama — она сама проверяет целостность). Для фонового потока."""
+    for m in CONFIG["models"]:
+        if not m.get("pull") or _has(installed_models(), m["id"]):
+            continue
+        pulling.update(model=m.get("name") or m["id"], percent=0.0, error="")
+        for attempt in range(6):  # загрузка иногда зависает — повтор продолжает с места остановки
+            try:
+                req = urllib.request.Request(f"{CONFIG['ollama']}/api/pull", json.dumps({"model": m["id"], "stream": True}).encode(),
+                                             {"Content-Type": "application/json"})
+                with urllib.request.urlopen(req, timeout=300) as r:  # 5 мин без данных — считать зависшей
+                    for line in r:
+                        d = json.loads(line or b"{}")
+                        if d.get("total"):
+                            pulling["percent"] = round(100 * d.get("completed", 0) / d["total"], 1)
+                        if d.get("error"):
+                            raise RuntimeError(d["error"])
+                if _has(installed_models(), m["id"]):
+                    break
+            except Exception as e:
+                pulling["error"] = str(e)[:200]
+                time.sleep(5)
+    pulling.update(model="", percent=0.0)
 
 def free_comfy():
     try:
@@ -141,6 +203,7 @@ SYSTEM = """Ты дружелюбный помощник на компьютер
 Ты умеешь разговаривать и рисовать картинки инструментом generate_image. Других возможностей у тебя нет:
 ты не выходишь в интернет, не видишь файлы и не управляешь компьютером — если просят такое, честно скажи об этом.
 Когда просят нарисовать — сразу вызывай generate_image (не обещай «сейчас нарисую»), промпт пиши по-английски.
+Говори «готово» только если инструмент это подтвердил; ответил ошибкой — так и скажи пользователю.
 Картинка появится в окне сама, ссылку на файл повторять не нужно. Не выдумывай свежие новости и текущие данные."""
 
 _ctx = {"chars_per_token": 3.2}  # замер на русских беседах ~3.3; уточняется по каждому ответу Ollama
@@ -158,11 +221,27 @@ def fit_context(messages, tools):
         del messages[1:users[1]]
     return size()
 
+def cut_loop(text, times=3, min_len=25):
+    """Модель зациклилась (одна и та же фраза ≥ times раз) — текст до второго повтора, иначе None."""
+    seen = {}
+    for p in re.split(r"(?<=[.!?…])\s+|\n+", text):
+        k = " ".join(p.lower().split())
+        if len(k) >= min_len:
+            seen[k] = seen.get(k, 0) + 1
+            if seen[k] >= times:
+                first = text.find(p)
+                second = text.find(p, first + len(p))
+                return text[:second].rstrip() if second > 0 else None
+    return None
+
 def chat(messages, think=False, use_tools=True):
     tools = TOOLS if use_tools else None
     sent = fit_context(messages, tools)
-    body = {"model": CONFIG["model"], "messages": messages, "tools": tools, "stream": False, "think": bool(think),
-            "options": {"temperature": CONFIG["temperature"], "num_ctx": CONFIG["num_ctx"]}}
+    model = current["model"]
+    # num_predict — предел длины ответа (зациклившаяся модель не съест память); свои настройки модели — из списка
+    opts = {"temperature": CONFIG["temperature"], "num_ctx": CONFIG["num_ctx"], "num_predict": CONFIG["reply_reserve"],
+            **model_options(model)}
+    body = {"model": model, "messages": messages, "tools": tools, "stream": False, "think": bool(think), "options": opts}
     if not use_tools:
         body.pop("tools")
     for attempt in range(3):
@@ -171,8 +250,11 @@ def chat(messages, think=False, use_tools=True):
             if r.get("prompt_eval_count"):
                 _ctx["chars_per_token"] = max(1.5, min(5.0, sent / r["prompt_eval_count"]))
             msg = r["message"]
-            if r.get("done_reason") == "length":
-                msg["content"] = (msg.get("content") or "") + "\n\n…(ответ оборвался. Напиши «продолжай» — допишу.)"
+            looped = cut_loop(msg.get("content") or "")
+            if looped is not None:
+                msg["content"] = looped + "\n\n…(модель начала повторяться — ответ обрезан. Попроси иначе или «продолжай».)"
+            elif r.get("done_reason") == "length":
+                msg["content"] = (msg.get("content") or "") + "\n\n…(ответ слишком длинный — оборван. Напиши «продолжай» — допишу.)"
             return msg
         except urllib.error.HTTPError:
             if attempt == 2:

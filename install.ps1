@@ -10,8 +10,6 @@ $Kit = Split-Path -Parent $MyInvocation.MyCommand.Path
 
 $COMFY_URL = "https://github.com/Comfy-Org/ComfyUI/releases/download/v0.44.0/ComfyUI_windows_portable_nvidia.7z"
 $FILES = @(
-    @{ Name = "Модель чата (Qwen3.5 9B, 7.7 ГБ)"; Url = "https://huggingface.co/DavidAU/Qwen3.5-9B-The-Defiant-Fable-Uncensored-Heretic-NEO-IMATRIX-MAX-MTP-GGUF/resolve/main/Qwen3.5-9B-The-Defiant-Fable-Uncnr-Heretic-NEO-MAX-Q5_K_M.gguf";
-       File = "downloads\chat-model-q5_k_m.gguf"; Size = 7667854624; Sha = "3138b1069d7a798460eba9cedf7b865f4dbf285b43117d9db549d124797cebbf" },
     @{ Name = "Модель рисования Anima turbo (4.2 ГБ)"; Url = "https://huggingface.co/circlestone-labs/Anima/resolve/main/split_files/diffusion_models/anima-turbo-v1.1.safetensors";
        File = "ComfyUI_windows_portable\ComfyUI\models\diffusion_models\anima-turbo-v1.1.safetensors"; Size = 4182230656; Sha = "fba11953276b57edf59d1dc4f1857ac05aa079c56f982b4d7c20298d57d3f7eb" },
     @{ Name = "Текстовый кодировщик (1.2 ГБ)"; Url = "https://huggingface.co/circlestone-labs/Anima/resolve/main/split_files/text_encoders/qwen_3_06b_base.safetensors";
@@ -19,8 +17,12 @@ $FILES = @(
     @{ Name = "VAE (0.25 ГБ)"; Url = "https://huggingface.co/circlestone-labs/Anima/resolve/main/split_files/vae/qwen_image_vae.safetensors";
        File = "ComfyUI_windows_portable\ComfyUI\models\vae\qwen_image_vae.safetensors"; Size = 253806246; Sha = "a70580f0213e67967ee9c95f05bb400e8fb08307e017a924bf3441223e023d1f" }
 )
-$MODEL_NAME = "agent-chat"
-$NEED_GB = 40
+# модели чата — из библиотеки Ollama (она сама проверяет целостность по SHA-256)
+$CHAT_MODELS = @(
+    @{ Id = "gemma4:12b"; Name = "Gemma 4 12B — работа (8 ГБ)" },
+    @{ Id = "huihui_ai/gemma-4-abliterated:12b"; Name = "Gemma 4 12B — без цензуры (7.6 ГБ)" }
+)
+$NEED_GB = 45
 
 function Say($text, $color = "Gray") { Write-Host $text -ForegroundColor $color }
 function Step($text) { Write-Host ""; Write-Host "==> $text" -ForegroundColor Cyan }
@@ -73,7 +75,7 @@ function Get-Download($url, $dest, [int64]$size = 0, [string]$sha = "", [string]
 }
 
 Write-Host "Установка локального агента: чат + рисование картинок" -ForegroundColor White
-Write-Host "Будет скачано около 15 ГБ. Это займёт от 20 минут до пары часов — зависит от интернета."
+Write-Host "Будет скачано около 24 ГБ. Это займёт от 20 минут до пары часов — зависит от интернета."
 
 # ---------- 1. Проверки ----------
 Step "Проверяю компьютер"
@@ -168,35 +170,29 @@ if (Test-Path $comfyPy) {
     Remove-Item $arch, "$arch.ok" -Force -ErrorAction SilentlyContinue
 }
 
-# ---------- 5. Модели ----------
+# ---------- 5. Модели рисования ----------
 foreach ($f in $FILES) {
     Step $f.Name
-    $dest = Join-Path $Root $f.File
-    if ($f.File -like "downloads\*.gguf" -and (Test-Path (Join-Path $Root "chat_model_ready.txt"))) { Say "Уже установлена." "Green"; continue }
-    Get-Download $f.Url $dest $f.Size $f.Sha $f.Name
+    Get-Download $f.Url (Join-Path $Root $f.File) $f.Size $f.Sha $f.Name
     Say "Готово." "Green"
 }
 
-# ---------- 6. Модель чата в Ollama ----------
-Step "Подключаю модель чата к Ollama"
-$gguf = Join-Path $Root "downloads\chat-model-q5_k_m.gguf"
-$listed = (& $ollama list 2>$null) -match "^$MODEL_NAME"
-if ($listed -and (Test-Path (Join-Path $Root "chat_model_ready.txt"))) {
-    Say "Уже подключена." "Green"
-} else {
-    $mf = Join-Path $Root "Modelfile"
-    @(
-        "FROM $gguf",
-        "PARAMETER temperature 1.0",
-        "PARAMETER top_p 0.95",
-        "PARAMETER top_k 20",
-        "PARAMETER repeat_penalty 1.0",
-        "PARAMETER num_ctx 8192"
-    ) -join "`n" | ForEach-Object { [IO.File]::WriteAllText($mf, $_, (New-Object Text.UTF8Encoding $false)) }  # без BOM
-    & $ollama create $MODEL_NAME -f $mf
-    if ($LASTEXITCODE -ne 0) { Fail "Ollama не смогла подключить модель чата." }
-    Set-Content -Path (Join-Path $Root "chat_model_ready.txt") -Value $MODEL_NAME -Encoding UTF8
-    Remove-Item $gguf, "$gguf.ok" -Force -ErrorAction SilentlyContinue  # Ollama сохранила свою копию — исходник больше не нужен
+# ---------- 6. Модели чата (через Ollama) ----------
+function Test-OllamaModel($id) {
+    try { return [bool]((Invoke-RestMethod "http://127.0.0.1:11434/api/tags" -TimeoutSec 10).models | Where-Object { $_.name -eq $id }) }
+    catch { return $false }
+}
+foreach ($m in $CHAT_MODELS) {
+    Step $m.Name
+    if (Test-OllamaModel $m.Id) { Say "Уже установлена." "Green"; continue }
+    for ($try = 1; $try -le 12 -and -not (Test-OllamaModel $m.Id); $try++) {
+        if ($try -gt 1) { Say "  скачивание зависло или оборвалось — продолжаю (попытка $try)..." "Yellow" }
+        # ollama pull иногда зависает на последнем куске: даём 10 минут, потом перезапуск (докачка с места остановки)
+        $p = Start-Process $ollama -ArgumentList "pull", $m.Id -NoNewWindow -PassThru
+        if (-not $p.WaitForExit(600000)) { try { $p.Kill() } catch {} }
+    }
+    if (-not (Test-OllamaModel $m.Id)) { Fail "не скачалась модель $($m.Id). Проверь интернет и запусти установку снова." }
+    Add-Content -Path (Join-Path $Root "models_installed.txt") -Value $m.Id -Encoding UTF8  # для удаления
     Say "Готово." "Green"
 }
 

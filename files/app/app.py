@@ -32,6 +32,7 @@ class Chat:
     def __init__(self, cid, title="Новая беседа", think=False, messages=None, events=None, created=None):
         self.id, self.title, self.think = cid, title, think
         self.created = created or time.time()
+        self.model = ""  # модель беседы (список в шапке окна); пусто — модель по умолчанию
         self.messages = messages or [{"role": "system", "content": agent.SYSTEM}]
         self.events = events or []
 
@@ -42,7 +43,8 @@ class Chat:
         CHATS_DIR.mkdir(parents=True, exist_ok=True)
         tmp = self.file().with_suffix(".tmp")
         tmp.write_text(json.dumps({"id": self.id, "title": self.title, "think": self.think, "created": self.created,
-                                   "messages": self.messages, "events": self.events}, ensure_ascii=False), encoding="utf-8")
+                                   "model": self.model, "messages": self.messages, "events": self.events},
+                                  ensure_ascii=False), encoding="utf-8")
         tmp.replace(self.file())
 
     def add(self, kind, text="", **extra):
@@ -59,8 +61,10 @@ def load_chats():
         for f in CHATS_DIR.glob("*.json"):
             try:
                 d = json.loads(f.read_text(encoding="utf-8"))
-                chats[d["id"]] = Chat(d["id"], d.get("title", "Беседа"), d.get("think", False), d.get("messages"),
-                                      d.get("events"), d.get("created"))
+                c = Chat(d["id"], d.get("title", "Беседа"), d.get("think", False), d.get("messages"),
+                         d.get("events"), d.get("created"))
+                c.model = d.get("model") or ""
+                chats[c.id] = c
             except Exception as e:
                 print(f"Не прочитал беседу {f.name}: {e}")
 
@@ -79,10 +83,23 @@ def images_in(text):
             out.append(m.group(0))
     return out
 
+_models_cache = {"t": 0.0, "list": []}
+
+def models_list():
+    """Установленные модели из списка (опрос Ollama не чаще раза в 5 с — страница спрашивает часто)."""
+    if time.time() - _models_cache["t"] > 5:
+        _models_cache.update(t=time.time(), list=[{"id": m["id"], "name": m.get("name") or m["id"]} for m in agent.available_models()])
+    return _models_cache["list"]
+
+def chat_model(chat):
+    ids = [m["id"] for m in models_list()]
+    return chat.model if chat.model in ids else agent.default_model()
+
 def worker(chat, text):
     def progress(line):
         status["progress"] = line
         bump()
+    agent.current["model"] = chat_model(chat)  # модель этой беседы
     try:
         if not any(m["role"] == "user" for m in chat.messages):
             t = " ".join(text.split())
@@ -215,8 +232,9 @@ class Handler(BaseHTTPRequestHandler):
                     state_lock.wait(25)
                 cur = version
             c = chats.get(q.get("chat", ""))
-            return self.send(200, {"v": cur, "status": dict(status),
-                                   "chat": {**c.brief(), "think": c.think, "events": c.events} if c else None})
+            return self.send(200, {"v": cur, "status": dict(status), "models": models_list(), "pulling": dict(agent.pulling),
+                                   "default_model": agent.default_model(),
+                                   "chat": {**c.brief(), "think": c.think, "model": chat_model(c), "events": c.events} if c else None})
         if u.path == "/api/services":
             return self.send(200, services())
         if u.path == "/api/version":
@@ -238,6 +256,8 @@ class Handler(BaseHTTPRequestHandler):
         c = chats.get(b.get("chat", ""))
         if u.path == "/api/chats":
             c = Chat(uuid.uuid4().hex[:12])
+            if any(m["id"] == b.get("model") for m in models_list()):  # модель, выбранная до создания беседы
+                c.model = b["model"]
             chats[c.id] = c
             c.save()
             bump()
@@ -258,9 +278,14 @@ class Handler(BaseHTTPRequestHandler):
                 status["progress"] = "останавливаю…"
                 bump()
             return self.send(200, {"ok": True})
-        if u.path in ("/api/think", "/api/rename") and c:
+        if u.path in ("/api/think", "/api/rename", "/api/model") and c:
             if u.path == "/api/think":
                 c.think = bool(b.get("think"))
+            elif u.path == "/api/model":
+                if status["busy"] == c.id:
+                    return self.send(409, {"error": "беседа сейчас работает — смени модель после ответа"})
+                if any(m["id"] == b.get("model") for m in models_list()):
+                    c.model = b["model"]
             elif (b.get("title") or "").strip():
                 c.title = b["title"].strip()[:80]
             c.save()
@@ -305,8 +330,32 @@ def restart():
                      cwd=str(agent.ROOT), creationflags=getattr(subprocess, "CREATE_NEW_CONSOLE", 0))
     os._exit(0)
 
+def pull_models():
+    """Фон: докачать недостающие модели из списка (после обновления с 1.1.x), страница видит прогресс."""
+    def ticker():
+        while agent.pulling.get("model") or not done.is_set():
+            bump()
+            time.sleep(3)
+    for _ in range(60):  # Ollama при запуске поднимается не сразу — без неё не понять, чего не хватает
+        try:
+            agent.http(f"{agent.CONFIG['ollama']}/api/tags", timeout=3)
+            break
+        except Exception:
+            time.sleep(2)
+    else:
+        return
+    done = threading.Event()
+    threading.Thread(target=ticker, daemon=True).start()
+    try:
+        agent.pull_missing()
+    finally:
+        _models_cache["t"] = 0  # список моделей обновится
+        done.set()
+        bump()
+
 def main():
     load_chats()
+    threading.Thread(target=pull_models, daemon=True).start()
     srv = None
     for attempt in range(20 if "--after-update" in sys.argv else 1):  # после обновления старое окно ещё закрывается
         try:

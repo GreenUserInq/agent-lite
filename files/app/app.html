@@ -34,6 +34,12 @@ button:disabled { opacity: .45; cursor: default; }
 #main { flex: 1; display: flex; flex-direction: column; min-width: 0; }
 #head { display: flex; align-items: center; gap: 10px; padding: 10px 16px; border-bottom: 1px solid var(--line); background: var(--panel); }
 #title { flex: 1; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#modelSel { font: inherit; font-size: 13px; color: var(--text); background: var(--panel2); border: 1px solid var(--line);
+  border-radius: 6px; padding: 4px 6px; max-width: 230px; cursor: pointer; flex: none; }
+#modelSel:focus { outline: none; border-color: var(--accent); }
+#pulling { padding: 0 10px 8px; font-size: 12px; color: var(--warn); display: none; }
+#pulling .bar { height: 4px; background: var(--panel2); border-radius: 2px; margin-top: 4px; overflow: hidden; }
+#pulling .bar i { display: block; height: 100%; background: var(--warn); }
 label.toggle { font-size: 13px; color: var(--dim); display: flex; align-items: center; gap: 5px; cursor: pointer; }
 #log { flex: 1; overflow-y: auto; padding: 18px 22px 10px; }
 #empty { color: var(--dim); text-align: center; margin-top: 16vh; line-height: 1.8; }
@@ -81,11 +87,13 @@ label.toggle { font-size: 13px; color: var(--dim); display: flex; align-items: c
   </div>
   <div id="chatlist"></div>
   <div id="services"></div>
+  <div id="pulling"></div>
   <div id="update"><span id="version"></span><button id="updateBtn" title="Проверить, есть ли новая версия окна агента">Обновления</button></div>
 </div>
 <div id="main">
   <div id="head">
     <div id="title" title="Двойной щелчок — переименовать">Агент</div>
+    <select id="modelSel" title="Какая модель отвечает в этой беседе"></select>
     <label class="toggle" title="Модель сначала рассуждает: дольше, иногда точнее"><input type="checkbox" id="think"> рассуждения</label>
   </div>
   <div id="log"></div>
@@ -175,6 +183,11 @@ async function loop() {
       renderChat(d.chat);
       $("#title").textContent = d.chat ? d.chat.title : "Агент";
       if (d.chat) $("#think").checked = !!d.chat.think;
+      modelSelect(d);
+      const pl = d.pulling || {}, pe = $("#pulling");
+      pe.style.display = pl.model ? "block" : "none";
+      if (pl.model) pe.innerHTML = `Скачиваю модель «${esc(pl.model)}»: ${pl.percent || 0}%` +
+        `<div class="bar"><i style="width:${pl.percent || 0}%"></i></div>`;
       if (changed) loadChats();
     } catch (e) {
       if (e.name === "AbortError") continue;
@@ -192,7 +205,26 @@ async function loadChats() {
     || '<div style="color:var(--dim);padding:8px">Бесед пока нет</div>';
 }
 function select(id) { cur = id; id ? localStorage.setItem("chat", id) : localStorage.removeItem("chat"); lastChat = null; refresh(); loadChats(); $("#input").focus(); }
-$("#newChat").onclick = async () => { const c = await api("/api/chats", {method: "POST", json: {}}); select(c.id); };
+// ---------- выбор модели ----------
+function modelSelect(d) {
+  const sel = $("#modelSel"), models = d.models || [], opts = JSON.stringify(models);
+  if (sel.dataset.opts !== opts) {
+    sel.dataset.opts = opts;
+    sel.innerHTML = models.map(m => `<option value="${esc(m.id)}">${esc(m.name)}</option>`).join("");
+  }
+  let value = d.chat ? d.chat.model : null;
+  if (!value) { try { value = localStorage.getItem("nextModel"); } catch (e) {} }
+  if (!models.some(m => m.id === value)) value = d.default_model;
+  if (document.activeElement !== sel && value) sel.value = value;
+  sel.style.display = models.length > 1 ? "" : "none";
+  sel.disabled = !!(d.chat && d.status.busy === d.chat.id);
+}
+$("#modelSel").onchange = e => {
+  if (!cur) { try { localStorage.setItem("nextModel", e.target.value); } catch (err) {} e.target.blur(); return; }
+  api("/api/model", {method: "POST", json: {chat: cur, model: e.target.value}})
+    .then(() => { e.target.blur(); refresh(); }).catch(err => { alert(err.message); refresh(); });
+};
+$("#newChat").onclick = async () => { const c = await api("/api/chats", {method: "POST", json: {model: $("#modelSel").value}}); select(c.id); };
 $("#folderBtn").onclick = () => api("/api/folder", {method: "POST", json: {}});
 $("#chatlist").onclick = async e => {
   const item = e.target.closest(".chat-item"); if (!item) return;
@@ -214,7 +246,7 @@ $("#think").onchange = e => cur && api("/api/think", {method: "POST", json: {cha
 async function send() {
   const box = $("#input"), text = box.value.trim();
   if (!text) return;
-  if (!cur) { const c = await api("/api/chats", {method: "POST", json: {}}); cur = c.id; localStorage.setItem("chat", cur); lastChat = null; }
+  if (!cur) { const c = await api("/api/chats", {method: "POST", json: {model: $("#modelSel").value}}); cur = c.id; localStorage.setItem("chat", cur); lastChat = null; }
   try { await api("/api/send", {method: "POST", json: {chat: cur, text}}); box.value = ""; autosize(); refresh(); }
   catch (e) { alert(e.message); }
 }
