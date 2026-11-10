@@ -56,6 +56,19 @@ label.toggle { font-size: 13px; color: var(--dim); display: flex; align-items: c
 .tool { border: 1px solid var(--line); border-radius: 8px; background: var(--panel); font-size: 14px; }
 .tool .head { padding: 7px 11px; color: var(--dim); display: flex; gap: 8px; align-items: center; }
 .tool .head span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tool details summary { cursor: pointer; list-style: none; }
+.tool details pre { margin: 0; padding: 8px 11px; border-top: 1px solid var(--line); font: 12px/1.4 Consolas, monospace;
+  white-space: pre-wrap; word-break: break-word; max-height: 360px; overflow-y: auto; color: var(--dim); }
+.confirm { border: 1px solid var(--warn); border-radius: 8px; background: var(--panel); padding: 10px 12px; font-size: 14px; }
+.confirm .q { font: 13px Consolas, monospace; white-space: pre-wrap; word-break: break-word; margin: 4px 0 8px; max-height: 320px; overflow-y: auto; }
+.confirm .done { color: var(--dim); font-size: 13px; }
+#projects { padding: 8px 10px; border-top: 1px solid var(--line); font-size: 12px; color: var(--dim); }
+#projects .proj { padding: 5px 0; }
+#projects .proj b { color: var(--text); }
+#projects .path { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#projects .warn { color: var(--warn); }
+#projects .btns { display: flex; gap: 5px; flex-wrap: wrap; margin-top: 4px; }
+#projects button { font-size: 12px; padding: 2px 7px; }
 .info { border: 1px solid var(--line); border-radius: 8px; padding: 7px 11px; color: var(--dim); }
 .info.error { border-color: var(--bad); color: var(--bad); }
 .spin { width: 11px; height: 11px; border: 2px solid var(--line); border-top-color: var(--accent); border-radius: 50%;
@@ -86,6 +99,7 @@ label.toggle { font-size: 13px; color: var(--dim); display: flex; align-items: c
     <button id="folderBtn">Папка с картинками</button>
   </div>
   <div id="chatlist"></div>
+  <div id="projects"></div>
   <div id="services"></div>
   <div id="pulling"></div>
   <div id="update"><span id="version"></span><button id="updateBtn" title="Проверить, есть ли новая версия окна агента">Обновления</button></div>
@@ -138,9 +152,26 @@ function md(text) {
     .replace(/\u0000(\d+)\u0000/g, (_, i) => `<pre>${esc(blocks[+i])}</pre>`);
 }
 
-function evHtml(ev) {
+const TOOL_NAMES = {search_code: "Поиск", outline: "Оглавление", read_file: "Читаю", list_dir: "Папка", edit_file: "Правка",
+  write_file: "Новый файл", build_check: "Проверка сборки", code_task_status: "Изменения", code_task_diff: "Изменения (diff)",
+  code_task_finish: "Задача закончена", code_task_undo: "Откат"};
+function evHtml(ev, st) {
   if (ev.type === "user") return `<div class="msg">${esc(ev.text)}</div>`;
   if (ev.type === "assistant") return `<div class="msg">${md(ev.text)}</div>`;
+  if (ev.type === "confirm") {
+    const waiting = ev.answer === null || ev.answer === undefined;
+    return `<div class="confirm">⚠ Агент просит разрешения:<div class="q">${esc(ev.text)}</div>` +
+      (waiting && st && st.confirm ? `<button class="primary" data-confirm="1">Выполнить</button> <button class="danger" data-confirm="0">Отклонить</button>`
+        : `<span class="done">${ev.answer ? "✓ разрешено" : "✕ отклонено"}</span>`) + `</div>`;
+  }
+  if (ev.type === "tool" && ev.name !== "generate_image") {  // инструменты кода: строка + результат по щелчку
+    const running = ev.result === null || ev.result === undefined;
+    const a = ev.args || {}, what = a.path || a.pattern || a.project || "";
+    const range = a.start ? ` (${a.start}–${a.end || "…"})` : "";
+    return `<div class="tool"><details><summary class="head">${running ? '<span class="spin"></span>' : "⚙"}` +
+      `<span>${esc(TOOL_NAMES[ev.name] || ev.name)}: ${esc(String(what).split(/[\\/]/).slice(-2).join("/"))}${esc(range)}</span></summary>` +
+      `<pre>${esc(JSON.stringify(a, null, 1))}${running ? "" : "\n\n— результат —\n" + esc(ev.result)}</pre></details></div>`;
+  }
   if (ev.type === "tool") {
     const running = ev.result === null || ev.result === undefined;
     const what = ev.name === "generate_image" ? "Рисую: " + (ev.args?.prompt || "") : ev.name;
@@ -151,7 +182,7 @@ function evHtml(ev) {
   return `<div class="info ${ev.type === "error" ? "error" : ""}">${esc(ev.text)}</div>`;
 }
 
-function renderChat(chat) {
+function renderChat(chat, st) {
   const log = $("#log");
   if (!chat) { log.innerHTML = `<div id="empty">${EMPTY}</div>`; rendered = []; lastChat = null; return; }
   if (lastChat !== chat.id) { log.innerHTML = ""; rendered = []; lastChat = chat.id; }
@@ -159,13 +190,15 @@ function renderChat(chat) {
   if (!chat.events.length) { log.innerHTML = `<div id="empty">${EMPTY}</div>`; rendered = []; return; }
   log.querySelector("#empty")?.remove();
   chat.events.forEach((ev, i) => {
-    const key = JSON.stringify(ev);
+    const key = JSON.stringify(ev) + (ev.type === "confirm" ? !!(st && st.confirm) : "");
     if (rendered[i] === key) return;
     rendered[i] = key;
     let node = log.querySelector(`.ev[data-k="${i}"]`);
     if (!node) { node = document.createElement("div"); node.dataset.k = i; log.appendChild(node); }
+    const wasOpen = !!node.querySelector("details[open]");  // не сворачивать раскрытый результат при обновлении
     node.className = "ev ev-" + ev.type;
-    node.innerHTML = evHtml(ev);
+    node.innerHTML = evHtml(ev, st);
+    if (wasOpen) node.querySelector("details")?.setAttribute("open", "");
   });
   if (nearBottom) log.scrollTop = log.scrollHeight;
   gallery = [...log.querySelectorAll(".media img")];
@@ -180,7 +213,7 @@ async function loop() {
       if (d.chat === null && cur) { cur = ""; localStorage.removeItem("chat"); }
       $("#status").classList.toggle("on", !!d.status.busy);
       $("#statusText").textContent = d.status.busy ? (d.status.busy === cur ? "" : "занят в другой беседе: ") + (d.status.progress || "работает…") : "";
-      renderChat(d.chat);
+      renderChat(d.chat, d.status);
       $("#title").textContent = d.chat ? d.chat.title : "Агент";
       if (d.chat) $("#think").checked = !!d.chat.think;
       modelSelect(d);
@@ -256,7 +289,12 @@ function autosize() { const b = $("#input"); b.style.height = "auto"; b.style.he
 $("#input").addEventListener("input", autosize);
 $("#stopBtn").onclick = () => api("/api/stop", {method: "POST", json: {}});
 
-$("#log").addEventListener("click", e => { const img = e.target.closest(".media img"); if (img) { galleryIdx = gallery.indexOf(img); showLight(); } });
+$("#log").addEventListener("click", async e => {
+  const c = e.target.closest("[data-confirm]");
+  if (c) { c.parentElement.querySelectorAll("button").forEach(b => b.disabled = true);
+           await api("/api/confirm", {method: "POST", json: {ok: c.dataset.confirm === "1"}}).catch(err => alert(err.message)); return; }
+  const img = e.target.closest(".media img"); if (img) { galleryIdx = gallery.indexOf(img); showLight(); }
+});
 function showLight() {
   const img = gallery[galleryIdx]; if (!img) return;
   $("#lightbox img").src = img.src;
@@ -279,6 +317,47 @@ async function services() {
   } catch (e) { $("#services").textContent = "агент не отвечает"; }
 }
 services(); setInterval(services, 15000);
+
+// ---------- проекты с кодом (подключённые папки) и задачи кода ----------
+async function projects() {
+  try {
+    const r = await api("/api/projects");
+    $("#projects").innerHTML = `<div><b>Проекты</b> <span title="Агент видит и правит только эти папки">(код)</span></div>` +
+      r.projects.map(p => {
+        const t = p.task, n = esc(p.name);
+        return `<div class="proj"><div><b>${n}</b></div><div class="path" title="${esc(p.path)}">${esc(p.path)}</div>` +
+          (p.problem ? `<div class="warn" title="${esc(p.problem)}">только чтение: ${esc(p.problem)}</div>` : "") +
+          (t ? `<div>${t.active ? "идёт" : (t.undone ? "откачена" : "последняя")}: ${esc(t.title)}</div>` : "") +
+          `<div class="btns">` +
+          (t ? `<button data-ct="status" data-p="${n}">Изменения</button>` : "") +
+          (t && t.active ? `<button data-ct="finish" data-p="${n}">Закончить</button>` : "") +
+          (t && !(t.undone && !t.active) ? `<button class="danger" data-ct="undo" data-p="${n}">Откатить</button>` : "") +
+          `<button data-rm="${n}" title="Агент перестанет видеть эту папку (файлы не удаляются)">Отключить</button></div></div>`;
+      }).join("") + `<div class="btns"><button id="addProject">+ Папка проекта</button></div>`;
+  } catch (e) { $("#projects").innerHTML = ""; }
+}
+$("#projects").addEventListener("click", async e => {
+  const b = e.target.closest("button"); if (!b) return;
+  try {
+    if (b.id === "addProject") {
+      b.disabled = true; b.textContent = "Выбери папку в окне Windows…";
+      const r = await api("/api/projects", {method: "POST", json: {action: "pick"}});
+      if (r.message) alert(r.message);
+    } else if (b.dataset.rm) {
+      if (!confirm(`Отключить проект «${b.dataset.rm}»? Агент перестанет его видеть. Файлы не удаляются.`)) return;
+      await api("/api/projects", {method: "POST", json: {action: "remove", name: b.dataset.rm}});
+    } else if (b.dataset.ct) {
+      const project = b.dataset.p, action = b.dataset.ct;
+      if (action === "undo") {
+        const s = await api("/api/codetask", {method: "POST", json: {action: "status", project}});
+        if (!confirm(s.text + "\n\nОткатить: вернуть эти файлы к снимку «до», новые удалить?")) return;
+      }
+      alert((await api("/api/codetask", {method: "POST", json: {action, project}})).text);
+    }
+  } catch (err) { alert(err.message); }
+  projects();
+});
+projects(); setInterval(projects, 15000);
 
 // ---------- обновления ----------
 let updateInfo = null;

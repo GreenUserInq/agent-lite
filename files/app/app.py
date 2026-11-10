@@ -8,7 +8,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 APP = pathlib.Path(__file__).parent
 sys.path.insert(0, str(APP))
 import agent_lite as agent
-import updater
+import codetools, updater
 
 PORT = int(agent.CONFIG.get("port", 8790))
 HOSTS = {f"127.0.0.1:{PORT}", f"localhost:{PORT}"}
@@ -19,8 +19,9 @@ IMG_RE = re.compile(r"[A-Za-z]:\\[^\n\"<>|*?:]+?\.png\b", re.I)
 
 state_lock = threading.Condition()
 version = 0
-status = {"busy": None, "progress": ""}
+status = {"busy": None, "progress": "", "confirm": None}
 chats = {}
+running_chat = {"chat": None}  # беседа, в которой сейчас работает агент (для вопросов-подтверждений)
 
 def bump():
     global version
@@ -95,18 +96,43 @@ def chat_model(chat):
     ids = [m["id"] for m in models_list()]
     return chat.model if chat.model in ids else agent.default_model()
 
+confirm_answer = threading.Event()
+confirm_result = {"ok": False}
+
+def web_confirm(question):
+    """Вопрос с кнопками «Выполнить / Отклонить» в беседе; ждём, пока человек нажмёт (или «Стоп»)."""
+    chat = running_chat["chat"]
+    if agent.stop_flag["stop"] or chat is None:
+        return False
+    ev = chat.add("confirm", question, answer=None)
+    confirm_result["ok"] = False
+    confirm_answer.clear()
+    status["confirm"] = {"text": question}
+    bump()
+    confirm_answer.wait()
+    status["confirm"] = None
+    ev["answer"] = confirm_result["ok"]
+    bump()
+    return confirm_result["ok"]
+
+agent.confirm = web_confirm
+
 def worker(chat, text):
     def progress(line):
         status["progress"] = line
         bump()
     agent.current["model"] = chat_model(chat)  # модель этой беседы
+    running_chat["chat"] = chat
     try:
         if not any(m["role"] == "user" for m in chat.messages):
             t = " ".join(text.split())
             chat.title = t[:48] + ("…" if len(t) > 48 else "")
+        if chat.messages and chat.messages[0].get("role") == "system":
+            chat.messages[0]["content"] = agent.system_prompt()  # проекты могли подключить после начала беседы
         chat.messages.append({"role": "user", "content": text})
+        agent.CURRENT_REQUEST = text  # название задачи кода, если агент начнёт править проект
         guard = agent.LoopGuard()
-        steps = agent.CONFIG["max_steps"]
+        steps = agent.max_steps()
         for step in range(steps):
             if agent.stop_flag["stop"]:
                 chat.add("info", "Остановлено.")
@@ -155,7 +181,8 @@ def worker(chat, text):
         chat.add("error", f"Ошибка: {e}")
         traceback.print_exc()
     finally:
-        status.update(busy=None, progress="")
+        status.update(busy=None, progress="", confirm=None)
+        running_chat["chat"] = None
         agent.stop_flag["stop"] = False
         chat.save()
         bump()
@@ -169,6 +196,20 @@ def start(chat, text):
     chat.add("user", text)
     threading.Thread(target=worker, args=(chat, text), daemon=True).start()
     return ""
+
+def pick_folder():
+    """Окно выбора папки (Windows). Вернуть путь или пусто (отмена)."""
+    script = ("Add-Type -AssemblyName System.Windows.Forms; $f = New-Object System.Windows.Forms.Form; $f.TopMost = $true; "
+              "$d = New-Object System.Windows.Forms.FolderBrowserDialog; "
+              "$d.Description = 'Папка проекта с кодом для агента'; "
+              "if ($d.ShowDialog($f) -eq 'OK') { [Console]::OutputEncoding = [Text.Encoding]::UTF8; $d.SelectedPath }")
+    try:
+        r = subprocess.run(["powershell", "-NoProfile", "-STA", "-Command", script], capture_output=True,
+                           text=True, encoding="utf-8", errors="replace", timeout=600,
+                           creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+    except (OSError, subprocess.TimeoutExpired):
+        return ""
+    return r.stdout.strip().splitlines()[-1] if r.stdout.strip() else ""
 
 def services():
     out = {}
@@ -241,6 +282,10 @@ class Handler(BaseHTTPRequestHandler):
             return self.send(200, {"version": agent.VERSION})
         if u.path == "/api/update/check":
             return self.send(200, updater.check())
+        if u.path == "/api/projects":  # подключённые папки проектов и их задачи кода
+            tasks = {t["project"]: t for t in codetools.summary_all()}
+            return self.send(200, {"projects": [{"name": k, "path": str(v), "task": tasks.get(k),
+                                                 "problem": codetools.git_ready(v)} for k, v in codetools.PROJECTS.items()]})
         if u.path == "/file":
             p = pathlib.Path(q.get("path", ""))
             if not allowed(p):
@@ -275,9 +320,43 @@ class Handler(BaseHTTPRequestHandler):
                     agent.http(f"{agent.CONFIG['comfy']}/interrupt", {}, timeout=5)
                 except Exception:
                     pass
+                if status["confirm"]:  # ждёт ответа на вопрос — считать «отклонено»
+                    confirm_result["ok"] = False
+                    confirm_answer.set()
                 status["progress"] = "останавливаю…"
                 bump()
             return self.send(200, {"ok": True})
+        if u.path == "/api/confirm":
+            if status["confirm"]:
+                confirm_result["ok"] = bool(b.get("ok"))
+                confirm_answer.set()
+            return self.send(200, {"ok": True})
+        if u.path == "/api/projects":  # подключить / отключить папку проекта
+            if status["busy"]:
+                return self.send(409, {"error": "агент сейчас работает — дождись конца или нажми «Стоп»"})
+            if b.get("action") == "pick":  # обычное окно Windows «Выбор папки»
+                path = pick_folder()
+                if not path:
+                    return self.send(200, {"ok": True, "message": ""})
+                ok, msg = agent.add_project(path)
+            elif b.get("action") == "add":
+                ok, msg = agent.add_project(b.get("path", ""), b.get("name", ""))
+            elif b.get("action") == "remove":
+                ok, msg = agent.remove_project(b.get("name", ""))
+            else:
+                ok, msg = False, "неизвестное действие"
+            return self.send(200 if ok else 400, {"ok": True, "message": msg} if ok else {"error": msg})
+        if u.path == "/api/codetask":  # кнопки задачи кода: изменения / закончить / откатить
+            action, project = b.get("action"), b.get("project", "")
+            if action == "status":
+                return self.send(200, {"text": codetools.task_status(project)})
+            if status["busy"]:
+                return self.send(409, {"error": "агент сейчас работает — дождись конца или нажми «Стоп»"})
+            if action == "finish":
+                return self.send(200, {"text": codetools.task_finish(project, "закончено кнопкой в окне")})
+            if action == "undo":  # подтверждение — на странице
+                return self.send(200, {"text": codetools.task_undo(project)})
+            return self.send(400, {"error": "неизвестное действие"})
         if u.path in ("/api/think", "/api/rename", "/api/model") and c:
             if u.path == "/api/think":
                 c.think = bool(b.get("think"))
