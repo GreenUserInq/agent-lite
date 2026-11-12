@@ -62,6 +62,9 @@ label.toggle { font-size: 13px; color: var(--dim); display: flex; align-items: c
 .confirm { border: 1px solid var(--warn); border-radius: 8px; background: var(--panel); padding: 10px 12px; font-size: 14px; }
 .confirm .q { font: 13px Consolas, monospace; white-space: pre-wrap; word-break: break-word; margin: 4px 0 8px; max-height: 320px; overflow-y: auto; }
 .confirm .done { color: var(--dim); font-size: 13px; }
+.docs { margin-top: 6px; display: flex; flex-direction: column; gap: 5px; }
+.docs button { font-size: 13px; padding: 4px 9px; }
+.tool .docs { padding: 0 11px 9px; }
 #pc { padding: 8px 10px; border-top: 1px solid var(--line); font-size: 12px; color: var(--dim); }
 #pc b { color: var(--text); }
 #pc .warn { color: var(--warn); }
@@ -165,10 +168,19 @@ const TOOL_NAMES = {search_code: "Поиск", outline: "Оглавление", 
   browser_type: "Ввожу на странице", browser_back: "Назад", browser_screenshot: "Снимок страницы",
   list_windows: "Окна", screenshot: "Снимок экрана", look_at_screen: "Смотрю на экран", ui_elements: "Элементы окна",
   control_open: "Запускаю", control_start: "Управление", control_click: "Нажимаю", control_click_visual: "Нажимаю по снимку",
-  control_type: "Печатаю", control_keys: "Клавиши", control_scroll: "Прокрутка", control_stop: "Управление закончено"};
+  control_type: "Печатаю", control_keys: "Клавиши", control_scroll: "Прокрутка", control_stop: "Управление закончено",
+  doc_create: "Создаю документ", doc_read: "Читаю документ", doc_edit: "Правлю документ", doc_to_pdf: "Сохраняю в PDF",
+  doc_open: "Открываю документ"};
+// Кнопки «Открыть» / «Показать в папке» для документов, которые упомянул агент
+function docsHtml(list) {
+  if (!list || !list.length) return "";
+  const base = p => String(p).split(/[\\/]/).pop();
+  return `<div class="docs">` + list.map(p => `<div><button data-open="${esc(p)}" title="${esc(p)}">📄 Открыть ${esc(base(p))}</button> ` +
+    `<button data-folder="${esc(p)}" title="Открыть папку с этим файлом">Показать в папке</button></div>`).join("") + `</div>`;
+}
 function evHtml(ev, st) {
   if (ev.type === "user") return `<div class="msg">${esc(ev.text)}</div>`;
-  if (ev.type === "assistant") return `<div class="msg">${md(ev.text)}</div>`;
+  if (ev.type === "assistant") return `<div class="msg">${md(ev.text)}</div>` + docsHtml(ev.docs);
   if (ev.type === "confirm") {
     const waiting = ev.answer === null || ev.answer === undefined;
     return `<div class="confirm">⚠ Агент просит разрешения:<div class="q">${esc(ev.text)}</div>` +
@@ -185,7 +197,8 @@ function evHtml(ev, st) {
     return `<div class="tool"><details><summary class="head">${running ? '<span class="spin"></span>' : "⚙"}` +
       `<span>${esc(TOOL_NAMES[ev.name] || ev.name)}${shown ? ": " + esc(shown) : ""}${esc(range)}</span></summary>` +
       `<pre>${esc(JSON.stringify(a, null, 1))}${running ? "" : "\n\n— результат —\n" + esc(ev.result)}</pre></details>` +
-      ((ev.files || []).length ? `<div class="media">${ev.files.map(p => `<img src="${fileUrl(p)}" data-path="${esc(p)}">`).join("")}</div>` : "") + `</div>`;
+      ((ev.files || []).length ? `<div class="media">${ev.files.map(p => `<img src="${fileUrl(p)}" data-path="${esc(p)}">`).join("")}</div>` : "") +
+      docsHtml(ev.docs) + `</div>`;
   }
   if (ev.type === "tool") {
     const running = ev.result === null || ev.result === undefined;
@@ -308,6 +321,10 @@ $("#log").addEventListener("click", async e => {
   const c = e.target.closest("[data-confirm]");
   if (c) { c.parentElement.querySelectorAll("button").forEach(b => b.disabled = true);
            await api("/api/confirm", {method: "POST", json: {ok: c.dataset.confirm === "1"}}).catch(err => alert(err.message)); return; }
+  const o = e.target.closest("[data-open]");
+  if (o) { api("/api/open", {method: "POST", json: {path: o.dataset.open}}).catch(err => alert(err.message)); return; }
+  const fo = e.target.closest("[data-folder]");
+  if (fo) { api("/api/open", {method: "POST", json: {path: fo.dataset.folder, folder: true}}).catch(err => alert(err.message)); return; }
   const img = e.target.closest(".media img"); if (img) { galleryIdx = gallery.indexOf(img); showLight(); }
 });
 function showLight() {

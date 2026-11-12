@@ -86,6 +86,23 @@ def _inside(p, root):
     except (OSError, ValueError):
         return False
 
+DOC_EXT = {".docx", ".doc", ".pdf", ".xlsx", ".pptx", ".txt", ".rtf", ".odt", ".csv"}
+DOC_RE = re.compile(r"[A-Za-z]:\\[^\n\"<>|*?:`]+?\.(?:docx?|pdf|xlsx|pptx|txt|rtf|odt|csv)\b", re.I)
+
+def docs_in(text):
+    """Документы (существующие файлы) по путям в тексте — для кнопок «Открыть» / «Показать в папке»."""
+    seen, out = set(), []
+    for m in DOC_RE.finditer(text or ""):
+        p = m.group(0).strip()
+        if p.lower() not in seen and pathlib.Path(p).is_file():
+            seen.add(p.lower())
+            out.append(p)
+    return out[:10]
+
+def mentioned(p):
+    key = str(p).lower()
+    return any(key == str(f).lower() for c in list(chats.values()) for ev in c.events for f in ev.get("docs") or [])
+
 def images_in(text):
     out = []
     for m in IMG_RE.finditer(text or ""):
@@ -156,7 +173,8 @@ def worker(chat, text):
             agent.compact_results(chat.messages)
             calls = msg.get("tool_calls") or []
             if (msg.get("content") or "").strip():
-                chat.add("assistant", msg["content"].strip())
+                reply = msg["content"].strip()
+                chat.add("assistant", reply, docs=docs_in(reply))  # кнопки «Открыть» для документов из ответа
             if not calls:
                 break
             for c in calls:
@@ -181,11 +199,13 @@ def worker(chat, text):
                         traceback.print_exc()
                 ev["result"] = str(result)
                 ev["files"] = images_in(str(result))
+                ev["docs"] = docs_in(str(result))
                 chat.messages.append({"role": "tool", "content": str(result), "tool_name": name})
                 bump()
         else:
             progress("шаги кончились — пишет, что сделано и что осталось…")
-            chat.add("assistant", agent.wrap_up(chat.messages, chat.think))
+            reply = agent.wrap_up(chat.messages, chat.think)
+            chat.add("assistant", reply, docs=docs_in(reply))
             chat.add("info", "Задача не закончена за один раз. Напиши «продолжай», чтобы агент закончил.")
         chat.messages = agent.trim_history(chat.messages)
     except Exception as e:
@@ -414,6 +434,15 @@ class Handler(BaseHTTPRequestHandler):
             if ok:  # ответить странице, потом перезапуститься уже с новыми файлами
                 threading.Timer(1.0, restart).start()
             return self.send(200 if ok else 409, {"ok": ok, "message": msg} if ok else {"error": msg})
+        if u.path == "/api/open":  # документ, который показал агент: открыть программой по умолчанию или показать в папке
+            p = pathlib.Path(b.get("path", ""))
+            if p.suffix.lower() not in DOC_EXT or not p.is_file() or not mentioned(p):
+                return self.send(403, {"error": "файл недоступен (или его уже нет)"})
+            if b.get("folder"):
+                subprocess.Popen(["explorer", "/select,", str(p.resolve())])
+            else:
+                os.startfile(str(p.resolve()))
+            return self.send(200, {"ok": True})
         if u.path == "/api/folder":  # открыть папку с картинками в проводнике
             IMG_ROOT.mkdir(parents=True, exist_ok=True)
             os.startfile(str(IMG_ROOT))
@@ -472,6 +501,7 @@ def pull_models():
 def main():
     load_chats()
     threading.Thread(target=pull_models, daemon=True).start()
+    threading.Thread(target=agent.ensure_docx, daemon=True).start()  # библиотека документов Word — доставить, если нет
     srv = None
     for attempt in range(20 if "--after-update" in sys.argv else 1):  # после обновления старое окно ещё закрывается
         try:

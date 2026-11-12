@@ -169,6 +169,15 @@ if (Test-Path $comfyPy) {
     if ($LASTEXITCODE -ne 0 -or -not (Test-Path $comfyPy)) { Remove-Item (Join-Path $Root "ComfyUI_windows_portable") -Recurse -Force -ErrorAction SilentlyContinue; Fail "архив ComfyUI не распаковался." }
     Remove-Item $arch, "$arch.ok" -Force -ErrorAction SilentlyContinue
 }
+# библиотека документов Word (python-docx) — в тот же Python, которым работает окно агента
+$old = $ErrorActionPreference; $ErrorActionPreference = "Continue"
+& $comfyPy -s -c "import docx" 2>$null | Out-Null
+if ($LASTEXITCODE -ne 0) {
+    Say "Ставлю библиотеку документов Word (python-docx)..."
+    & $comfyPy -s -m pip install --no-warn-script-location -q "python-docx==1.2.0" 2>$null | Out-Null
+    if ($LASTEXITCODE -ne 0) { Say "Не поставилась — окно агента попробует само при запуске." "Yellow" }
+}
+$ErrorActionPreference = $old
 
 # ---------- 5. Модели рисования ----------
 foreach ($f in $FILES) {

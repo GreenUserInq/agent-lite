@@ -2,9 +2,9 @@
 # Работа с кодом — только в папках проектов, которые человек сам подключил в окне («Проекты»): чтение, поиск,
 # правка с подтверждением, проверка сборки, снимки git для отката. Команд и других файлов на компьютере агент не трогает.
 import json, pathlib, random, re, time, urllib.error, urllib.parse, urllib.request
-import codetools, screen, hands, browser  # общие модули с полным агентом (настройки — settings.py лайта)
+import codetools, screen, hands, browser, docs  # общие модули с полным агентом (настройки — settings.py лайта)
 
-VERSION = "1.5.0"  # версия окна агента; make_release.py ставит её сам
+VERSION = "1.6.0"  # версия окна агента; make_release.py ставит её сам
 APP = pathlib.Path(__file__).parent
 ROOT = APP.parent
 IMAGES_DIR = ROOT / "images"
@@ -449,11 +449,12 @@ SYSTEM = """Ты дружелюбный помощник на компьютер
 
 def tools():
     """Инструменты сейчас: рисование + код (подключены проекты) + свой браузер + управление ПК (если включено)."""
-    return (TOOLS + (code_tools() if codetools.PROJECTS else []) + (BROWSER_TOOLS if CONFIG.get("browser") else [])
+    return (TOOLS + DOC_TOOLS + (code_tools() if codetools.PROJECTS else []) + (BROWSER_TOOLS if CONFIG.get("browser") else [])
             + (PC_TOOLS if CONFIG.get("pc_control") else []))
 
 def system_prompt():
-    s = SYSTEM
+    s = SYSTEM.replace("Ты умеешь разговаривать и рисовать картинки инструментом generate_image.",
+                       "Ты умеешь разговаривать, рисовать картинки (generate_image) и делать документы Word (doc_*).") + DOC_SYSTEM
     if codetools.PROJECTS:
         s = s.replace("не видишь файлы и ", "") + CODE_SYSTEM.format(projects=codetools.describe_projects())
     if CONFIG.get("browser"):
@@ -530,6 +531,53 @@ PC_TOOLS = [
 
 hands.confirm = lambda q: confirm(q)
 browser.confirm = lambda q: confirm(q)
+docs.confirm = lambda q: confirm(q)
+DOCS_DIR = ROOT / "documents"  # документы по умолчанию
+
+DOC_SYSTEM = f"""
+Документы Word (.docx, .doc): только инструменты doc_*. Новый — doc_create (папку и имя бери из просьбы; не сказали —
+{DOCS_DIR}). Править — сначала doc_read, потом doc_edit: мелкое (слово, число, строка таблицы «a | b») — replace,
+абзац целиком — set, новое — insert/append. PDF — doc_to_pdf; показать пользователю — doc_open.
+«Найди в интернете и сделай документ»: browser_search → browser_open/browser_read → doc_create (в конце «Источник: адрес»)."""
+
+DOC_TOOLS = [
+    _tool("doc_create", "Создать документ Word (.docx; .doc — если просят старый формат). content — разметка: # Заголовок, "
+          "## Подзаголовок, «- » пункт, «1. » нумерованный, строки таблицы «| a | b |» (первая — шапка), **жирный**, *курсив*, "
+          "[разрыв страницы]; каждая непустая строка — абзац.",
+          {"path": {"type": "string", "description": "полный путь с .docx или .doc"}, "content": S,
+           "overwrite": {"type": "boolean"}}, ["path", "content"]),
+    _tool("doc_read", "Прочитать документ Word: блоки с номерами [N].", {"path": S, "start": {"type": "integer"},
+          "end": {"type": "integer"}}, ["path"]),
+    _tool("doc_edit", "Изменить документ Word (сначала doc_read). action: replace (old → new по всему документу, и строки таблиц "
+          "«a | b | c»), set (абзац n целиком), insert (text после блока n; n=0 — в начало), append (text в конец), "
+          "delete (count блоков с n).",
+          {"path": S, "action": {"type": "string", "enum": ["replace", "set", "insert", "append", "delete"]},
+           "n": {"type": "integer"}, "text": S, "old": S, "new": S, "count": {"type": "integer"}}, ["path", "action"]),
+    _tool("doc_to_pdf", "Сохранить документ Word как PDF рядом (нужен установленный Word).", {"path": S}, ["path"]),
+    _tool("doc_open", "Открыть документ у пользователя (Word или программа по умолчанию).", {"path": S}, ["path"]),
+]
+
+def doc_open(path, **_):
+    import os
+    p = pathlib.Path(str(path).strip().strip('"'))
+    if not p.is_file() or p.suffix.lower() not in (".doc", ".docx", ".pdf", ".rtf", ".odt"):
+        return f"Нет такого документа: {path}"
+    os.startfile(str(p))
+    return f"Открыт: {p}"
+
+def ensure_docx():
+    """Фоном: если python-docx нет в Python окна — поставить из PyPI (встроенный pip). Для фонового потока."""
+    import subprocess, sys
+    if docs.docx is not None:
+        return
+    docs.INSTALL_STATE = "ставится"
+    try:
+        r = subprocess.run([sys.executable, "-s", "-m", "pip", "install", "--no-warn-script-location", "-q", "python-docx==1.2.0"],
+                           capture_output=True, text=True, timeout=600, creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+        docs.INSTALL_STATE = "" if r.returncode == 0 else "ошибка: " + (r.stderr or r.stdout).strip()[-200:]
+    except Exception as e:
+        docs.INSTALL_STATE = f"ошибка: {e}"
+    docs._need()  # подхватить без перезапуска
 
 PC_FUNCS = {
     "browser_search": browser.browser_search, "browser_open": browser.browser_open, "browser_read": browser.browser_read,
@@ -540,6 +588,8 @@ PC_FUNCS = {
     "control_open": hands.control_open, "control_start": hands.control_start, "control_click": hands.control_click,
     "control_click_visual": hands.control_click_visual, "control_type": hands.control_type, "control_keys": hands.control_keys,
     "control_scroll": hands.control_scroll, "control_stop": hands.control_stop,
+    "doc_create": docs.doc_create, "doc_read": docs.doc_read, "doc_edit": docs.doc_edit, "doc_to_pdf": docs.doc_to_pdf,
+    "doc_open": doc_open,
 }
 
 # Служебные метки шаблона модели, которые просачиваются в аргументы (Gemma 4: «<|channel>:» перед строками кода)
@@ -626,6 +676,8 @@ FUNCS = {"generate_image": generate_image, **CODE_FUNCS, **PC_FUNCS}
 
 def call_allowed(name):
     """Инструмент сейчас включён (модель может позвать выключенный по старой памяти беседы)."""
+    if name.startswith("doc_"):  # документы — всегда
+        return True
     if name in PC_FUNCS and name.startswith("browser_"):
         return CONFIG.get("browser")
     if name in PC_FUNCS:

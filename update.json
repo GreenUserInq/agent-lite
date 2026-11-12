@@ -1,24 +1,24 @@
 {
- "version": "1.5.0",
- "notes": "Свой браузер агента: «загугли», «открой сайт» — отдельный Chrome без твоих аккаунтов, капчу проходишь ты. Управление ПК (выключено, включается внизу слева): снимки экрана, окна, нажатия и печать в Блокноте, Paint, Word, Excel, Калькуляторе, Проводнике — с разрешения; стоп — СТОП, Pause, Ctrl+Alt+S или мышь.",
+ "version": "1.6.0",
+ "notes": "Документы Word: создать, прочитать, исправить (.docx; .doc и PDF — если есть Word), «найди в интернете и сохрани в ворд»; кнопки «Открыть» и «Показать в папке» под ответом. Библиотека документов поставится сама при первом запуске после обновления (около минуты).",
  "files": [
   {
    "path": "app/agent_lite.py",
    "repo": "files/app/agent_lite.py",
-   "sha256": "e419fc04e7b2c0603287198b228107a62460c9d89aafe6f6d91e4db753e4f692",
-   "size": 47084
+   "sha256": "144889335c4b0b6b62071b9c39d78ec5d428c2bbd080c15a8accf5f69ec82381",
+   "size": 51440
   },
   {
    "path": "app/app.html",
    "repo": "files/app/app.html",
-   "sha256": "bd035596ab76e443456affd185e741789dfe267881425b2c4736aa0ec7682cb7",
-   "size": 30508
+   "sha256": "90ec8d3573a300cd5f99d88a0eae4818af63f8a52030ae6ac4c75a9a288799bf",
+   "size": 31867
   },
   {
    "path": "app/app.py",
    "repo": "files/app/app.py",
-   "sha256": "904bcad110c1444c2800f21c79f9affc97b7ceb0b09aca49b300f8abfe7e4ff1",
-   "size": 25334
+   "sha256": "79ed459d329645e7e06556606feb22d26626deece76ff9e6f5ba89791557963d",
+   "size": 27205
   },
   {
    "path": "app/browser.py",
@@ -31,6 +31,12 @@
    "repo": "files/app/codetools.py",
    "sha256": "ad39d8cf78250e2bcf65ccf1c57bb30e29316887536d62382be13d0e0321d703",
    "size": 30639
+  },
+  {
+   "path": "app/docs.py",
+   "repo": "files/app/docs.py",
+   "sha256": "1d70e38b30247d1f997eb0182bb898ef7edcc4533065a828ea77118d6b7c7b0a",
+   "size": 23092
   },
   {
    "path": "app/hands.py",
@@ -81,6 +87,12 @@
    "size": 4860
   },
   {
+   "path": "app/word.ps1",
+   "repo": "files/app/word.ps1",
+   "sha256": "94c14419a38ead55cbff545f6138c131cd6a0ea103d730670111aff9ff42dd58",
+   "size": 1686
+  },
+  {
    "path": "start.bat",
    "repo": "files/start.bat",
    "sha256": "b022f834e39dfbd322a547b7daf9b7c99e874e9ed3c332c1647503ed26b6d729",
@@ -101,8 +113,8 @@
   {
    "path": "README.txt",
    "repo": "README.txt",
-   "sha256": "2b98c8ba78e9215c99a0b7a447caf92785ca3c482ac9614f05cbd80664b82880",
-   "size": 7442
+   "sha256": "4ce063324a4d96c0b868d0ed2f0f747490571afe3a9241623488cd4c33b234b4",
+   "size": 8113
   }
  ]
 }
