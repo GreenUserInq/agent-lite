@@ -1,12 +1,12 @@
 {
- "version": "1.3.1",
- "notes": "Исправлен ярлык «Агент»: окно не запускалось (в start.bat был испорчен путь к app\\app.py). Если окно не открывается — замени start.bat по инструкции в README.",
+ "version": "1.4.0",
+ "notes": "Память модели 64k вместо 16k для обеих Gemma 4 (длинные беседы и задачи с кодом не забывают начало; помещается в видеокарту 12 ГБ). Старая Defiant — по-прежнему 16k.",
  "files": [
   {
    "path": "app/agent_lite.py",
    "repo": "files/app/agent_lite.py",
-   "sha256": "b5594b86b3bd2930afae291f1d760ce3adea430effe9ec1a8163c5fc32d92b6e",
-   "size": 37914
+   "sha256": "a18f9fda8c4107c0185856dcbc9da12e57b9d06d45ff5ec0dc55194bc120646c",
+   "size": 38702
   },
   {
    "path": "app/app.html",

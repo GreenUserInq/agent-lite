@@ -4,7 +4,7 @@
 import json, pathlib, random, re, time, urllib.error, urllib.parse, urllib.request
 import codetools
 
-VERSION = "1.3.1"  # версия окна агента; make_release.py ставит её сам
+VERSION = "1.4.0"  # версия окна агента; make_release.py ставит её сам
 APP = pathlib.Path(__file__).parent
 ROOT = APP.parent
 IMAGES_DIR = ROOT / "images"
@@ -14,13 +14,14 @@ CONFIG = {
     "model": "gemma4:12b",   # модель по умолчанию для новых бесед (первая установленная из models)
     # модели на выбор (список в шапке окна); недостающие окно докачивает само через Ollama
     "models": [
-        {"id": "gemma4:12b", "name": "Gemma 4 12B — работа", "pull": True},
+        # Gemma 4 экономна к длинному контексту (скользящее окно у большинства слоёв): 64k — ~10.3 ГБ видеопамяти, целиком в 12 ГБ
+        {"id": "gemma4:12b", "name": "Gemma 4 12B — работа", "pull": True, "options": {"num_ctx": 65536}},
         {"id": "huihui_ai/gemma-4-abliterated:12b", "name": "Gemma 4 12B — без цензуры", "pull": True,
-         "options": {"repeat_penalty": 1.1, "top_k": 64}},
+         "options": {"repeat_penalty": 1.1, "top_k": 64, "num_ctx": 65536}},
         {"id": "agent-chat", "name": "Qwen3.5 Defiant (старая)", "pull": False},  # у ставивших раньше 1.2.0
     ],
     "temperature": 0.7,
-    "num_ctx": 16384,        # память модели в токенах (16k целиком на видеокарте 12 ГБ)
+    "num_ctx": 16384,        # память модели в токенах, если у модели не задано своё (options.num_ctx)
     "reply_reserve": 3072,   # всегда оставлять на ответ
     "max_steps": 15,         # вызовов инструментов подряд на одно сообщение (потом — отчёт и «продолжай»)
     "max_steps_code": 30,    # то же, когда подключены проекты (поиск, чтение, правка, сборка — шагов больше)
@@ -472,12 +473,13 @@ def clean_args(args):
 
 _ctx = {"chars_per_token": 3.2}  # замер на русских беседах ~3.3; уточняется по каждому ответу Ollama
 
-def fit_context(messages, tools):
+def fit_context(messages, tools, num_ctx=None):
     """Обрезать историю ПО ТОКЕНАМ, чтобы на ответ всегда оставалось reply_reserve токенов (иначе ответ обрывается
-    на полуслове). Выкидываются самые старые реплики целиком; текущая — никогда. Возвращает число символов."""
+    на полуслове). Выкидываются самые старые реплики целиком; текущая — никогда. Возвращает число символов.
+    num_ctx — контекст текущей модели (у каждой свой)."""
     fixed = len(json.dumps(tools, ensure_ascii=False)) if tools else 0
     size = lambda: fixed + len(json.dumps(messages, ensure_ascii=False))
-    budget = (CONFIG["num_ctx"] - CONFIG["reply_reserve"]) * _ctx["chars_per_token"]
+    budget = ((num_ctx or CONFIG["num_ctx"]) - CONFIG["reply_reserve"]) * _ctx["chars_per_token"]
     while size() > budget:
         users = [i for i, m in enumerate(messages) if i > 0 and m.get("role") == "user"]
         if len(users) < 2:
@@ -500,11 +502,12 @@ def cut_loop(text, times=3, min_len=25):
 
 def chat(messages, think=False, use_tools=True):
     tools = globals()["tools"]() if use_tools else None
-    sent = fit_context(messages, tools)
     model = current["model"]
     # num_predict — предел длины ответа (зациклившаяся модель не съест память); свои настройки модели — из списка
     opts = {"temperature": CONFIG["temperature"], "num_ctx": CONFIG["num_ctx"], "num_predict": CONFIG["reply_reserve"],
             **model_options(model)}
+    _ctx["num_ctx"] = opts["num_ctx"]  # для compact_results
+    sent = fit_context(messages, tools, opts["num_ctx"])
     body = {"model": model, "messages": messages, "tools": tools, "stream": False, "think": bool(think), "options": opts}
     if not use_tools:
         body.pop("tools")
@@ -560,7 +563,9 @@ class LoopGuard:
 def compact_results(messages):
     """Старые ответы инструментов (кроме последних) сократить — иначе длинная задача переполнит память модели."""
     tools = [m for m in messages if m.get("role") == "tool"]
-    for m in tools[:-CONFIG["keep_full_results"]]:
+    # большой контекст — больше последних ответов целиком (реже правим старые сообщения — чаще работает кэш Ollama)
+    keep = min(12, max(CONFIG["keep_full_results"], CONFIG["keep_full_results"] * _ctx.get("num_ctx", CONFIG["num_ctx"]) // 32768))
+    for m in tools[:-keep]:
         c = m.get("content") or ""
         if len(c) > 700 and not c.startswith("(сокращено)"):
             m["content"] = "(сокращено) " + c[:400] + " … " + c[-200:]
