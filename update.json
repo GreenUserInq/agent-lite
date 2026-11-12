@@ -1,11 +1,11 @@
 {
- "version": "1.3.0",
- "notes": "Помощь с кодом: «+ Папка проекта» — агент ищет, читает и правит код только в подключённых папках (каждая правка с подтверждением), проверяет сборку Unity, перед правками делает снимок в ветку git agent/... — кнопка «Откатить». Кнопки «Выполнить / Отклонить» в беседе.",
+ "version": "1.3.1",
+ "notes": "Исправлен ярлык «Агент»: окно не запускалось (в start.bat был испорчен путь к app\\app.py). Если окно не открывается — замени start.bat по инструкции в README.",
  "files": [
   {
    "path": "app/agent_lite.py",
    "repo": "files/app/agent_lite.py",
-   "sha256": "98cfba3688abba5d6bbe2e9a3d73e0c20d6ee0b8ee7a2e057006dc291e697c1d",
+   "sha256": "b5594b86b3bd2930afae291f1d760ce3adea430effe9ec1a8163c5fc32d92b6e",
    "size": 37914
   },
   {
@@ -41,8 +41,8 @@
   {
    "path": "start.bat",
    "repo": "files/start.bat",
-   "sha256": "9d03c011f094a9538c7f98d7bf6be078f9560d7f43d7c04eb73804a0072e212a",
-   "size": 240
+   "sha256": "b022f834e39dfbd322a547b7daf9b7c99e874e9ed3c332c1647503ed26b6d729",
+   "size": 241
   },
   {
    "path": "uninstall.bat",
