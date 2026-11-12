@@ -62,6 +62,11 @@ label.toggle { font-size: 13px; color: var(--dim); display: flex; align-items: c
 .confirm { border: 1px solid var(--warn); border-radius: 8px; background: var(--panel); padding: 10px 12px; font-size: 14px; }
 .confirm .q { font: 13px Consolas, monospace; white-space: pre-wrap; word-break: break-word; margin: 4px 0 8px; max-height: 320px; overflow-y: auto; }
 .confirm .done { color: var(--dim); font-size: 13px; }
+#pc { padding: 8px 10px; border-top: 1px solid var(--line); font-size: 12px; color: var(--dim); }
+#pc b { color: var(--text); }
+#pc .warn { color: var(--warn); }
+#pc .btns { display: flex; gap: 5px; margin: 4px 0; }
+#pc button { font-size: 12px; padding: 2px 7px; }
 #projects { padding: 8px 10px; border-top: 1px solid var(--line); font-size: 12px; color: var(--dim); }
 #projects .proj { padding: 5px 0; }
 #projects .proj b { color: var(--text); }
@@ -99,6 +104,7 @@ label.toggle { font-size: 13px; color: var(--dim); display: flex; align-items: c
     <button id="folderBtn">Папка с картинками</button>
   </div>
   <div id="chatlist"></div>
+  <div id="pc"></div>
   <div id="projects"></div>
   <div id="services"></div>
   <div id="pulling"></div>
@@ -154,7 +160,12 @@ function md(text) {
 
 const TOOL_NAMES = {search_code: "Поиск", outline: "Оглавление", read_file: "Читаю", list_dir: "Папка", edit_file: "Правка",
   write_file: "Новый файл", build_check: "Проверка сборки", code_task_status: "Изменения", code_task_diff: "Изменения (diff)",
-  code_task_finish: "Задача закончена", code_task_undo: "Откат"};
+  code_task_finish: "Задача закончена", code_task_undo: "Откат",
+  browser_search: "Google", browser_open: "Открываю", browser_read: "Читаю страницу", browser_click: "Нажимаю на странице",
+  browser_type: "Ввожу на странице", browser_back: "Назад", browser_screenshot: "Снимок страницы",
+  list_windows: "Окна", screenshot: "Снимок экрана", look_at_screen: "Смотрю на экран", ui_elements: "Элементы окна",
+  control_open: "Запускаю", control_start: "Управление", control_click: "Нажимаю", control_click_visual: "Нажимаю по снимку",
+  control_type: "Печатаю", control_keys: "Клавиши", control_scroll: "Прокрутка", control_stop: "Управление закончено"};
 function evHtml(ev, st) {
   if (ev.type === "user") return `<div class="msg">${esc(ev.text)}</div>`;
   if (ev.type === "assistant") return `<div class="msg">${md(ev.text)}</div>`;
@@ -166,11 +177,15 @@ function evHtml(ev, st) {
   }
   if (ev.type === "tool" && ev.name !== "generate_image") {  // инструменты кода: строка + результат по щелчку
     const running = ev.result === null || ev.result === undefined;
-    const a = ev.args || {}, what = a.path || a.pattern || a.project || "";
+    const a = ev.args || {};
+    const what = a.path || a.pattern || a.project || a.query || a.url || (a.result ? "результат " + a.result : "") ||
+                 a.window || a.program || a.name || a.text || a.keys || a.target || a.question || "";
     const range = a.start ? ` (${a.start}–${a.end || "…"})` : "";
+    const shown = /[\\/]/.test(String(what)) && !/^https?:/.test(String(what)) ? String(what).split(/[\\/]/).slice(-2).join("/") : String(what).slice(0, 80);
     return `<div class="tool"><details><summary class="head">${running ? '<span class="spin"></span>' : "⚙"}` +
-      `<span>${esc(TOOL_NAMES[ev.name] || ev.name)}: ${esc(String(what).split(/[\\/]/).slice(-2).join("/"))}${esc(range)}</span></summary>` +
-      `<pre>${esc(JSON.stringify(a, null, 1))}${running ? "" : "\n\n— результат —\n" + esc(ev.result)}</pre></details></div>`;
+      `<span>${esc(TOOL_NAMES[ev.name] || ev.name)}${shown ? ": " + esc(shown) : ""}${esc(range)}</span></summary>` +
+      `<pre>${esc(JSON.stringify(a, null, 1))}${running ? "" : "\n\n— результат —\n" + esc(ev.result)}</pre></details>` +
+      ((ev.files || []).length ? `<div class="media">${ev.files.map(p => `<img src="${fileUrl(p)}" data-path="${esc(p)}">`).join("")}</div>` : "") + `</div>`;
   }
   if (ev.type === "tool") {
     const running = ev.result === null || ev.result === undefined;
@@ -358,6 +373,26 @@ $("#projects").addEventListener("click", async e => {
   projects();
 });
 projects(); setInterval(projects, 15000);
+
+// ---------- Управление ПК (выключено, пока владелец компьютера не включит) ----------
+async function pcState() {
+  try {
+    const s = await api("/api/pc");
+    $("#pc").innerHTML = `<div><b>Управление ПК</b>: ${s.pc_control ? '<span style="color:var(--ok)">включено</span>' : "выключено"}` +
+      (s.controlling ? `<div class="warn">сейчас управляет: ${esc(s.controlling)}</div>` : "") +
+      `</div><div class="btns"><button id="pcToggle">${s.pc_control ? "Выключить" : "Включить"}</button></div>` +
+      (s.browser ? `<div title="Отдельный Chrome без ваших аккаунтов: поиск в Google и сайты">Браузер агента: есть</div>` : "");
+    $("#pcToggle").onclick = async () => {
+      if (!s.pc_control && !confirm("Включить управление ПК?\n\nАгент сможет делать снимки экрана, видеть окна и — только с вашего " +
+          "разрешения на каждую задачу — нажимать и печатать в Блокноте, Paint, Word, Excel, Калькуляторе и Проводнике.\n\n" +
+          "Остановить в любой момент: кнопка «СТОП» сверху экрана, клавиша Pause или Ctrl+Alt+S, или просто двиньте мышь.\n" +
+          "Банки, почта и пароли — под запретом.")) return;
+      try { await api("/api/pc", {method: "POST", json: {on: !s.pc_control}}); } catch (err) { alert(err.message); }
+      pcState();
+    };
+  } catch (e) { $("#pc").innerHTML = ""; }
+}
+pcState(); setInterval(pcState, 15000);
 
 // ---------- обновления ----------
 let updateInfo = null;

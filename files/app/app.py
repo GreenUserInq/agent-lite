@@ -15,6 +15,7 @@ HOSTS = {f"127.0.0.1:{PORT}", f"localhost:{PORT}"}
 TOKEN = secrets.token_urlsafe(24)
 CHATS_DIR = agent.ROOT / "chats"
 IMG_ROOT = agent.IMAGES_DIR
+SCREENS_ROOT = agent.screen.SCREENS  # снимки экрана и страниц браузера агента
 IMG_RE = re.compile(r"[A-Za-z]:\\[^\n\"<>|*?:]+?\.png\b", re.I)
 
 state_lock = threading.Condition()
@@ -72,10 +73,18 @@ def load_chats():
 def allowed(p):
     try:
         p = pathlib.Path(p).resolve()
-        p.relative_to(IMG_ROOT.resolve())
-    except (OSError, ValueError):
+        if not any(_inside(p, root) for root in (IMG_ROOT, SCREENS_ROOT)):  # картинки и снимки экрана/страниц
+            return False
+    except OSError:
         return False
     return p.is_file() and p.suffix.lower() == ".png"
+
+def _inside(p, root):
+    try:
+        p.relative_to(root.resolve())
+        return True
+    except (OSError, ValueError):
+        return False
 
 def images_in(text):
     out = []
@@ -160,6 +169,8 @@ def worker(chat, text):
                 ev = chat.add("tool", "", name=name, args=args, result=None, files=[])
                 f = agent.FUNCS.get(name)
                 result = guard.check(name, args)  # тот же вызов в третий раз — цикл, не выполняем
+                if result is None and not agent.call_allowed(name):
+                    result = "Этот инструмент сейчас выключен (управление ПК включает владелец компьютера в окне)."
                 if result is None:
                     try:
                         result = f(**args, progress=progress) if f else f"Нет инструмента {name}"
@@ -196,6 +207,24 @@ def start(chat, text):
     chat.add("user", text)
     threading.Thread(target=worker, args=(chat, text), daemon=True).start()
     return ""
+
+def stop_control():
+    """«Стоп» в окне (и Pause / Ctrl+Alt+S) — остановить и управление ПК."""
+    if agent.hands.session:
+        agent.hands.STOP_FLAG.parent.mkdir(parents=True, exist_ok=True)
+        agent.hands.STOP_FLAG.write_text("window", encoding="utf-8")
+
+def _hotkey_stop():
+    stop_control()
+    if status["busy"]:
+        agent.stop_flag["stop"] = True
+        if status["confirm"]:
+            confirm_result["ok"] = False
+            confirm_answer.set()
+        status["progress"] = "останавливаю…"
+        bump()
+
+agent.hands.on_stop = _hotkey_stop
 
 def pick_folder():
     """Окно выбора папки (Windows). Вернуть путь или пусто (отмена)."""
@@ -282,6 +311,9 @@ class Handler(BaseHTTPRequestHandler):
             return self.send(200, {"version": agent.VERSION})
         if u.path == "/api/update/check":
             return self.send(200, updater.check())
+        if u.path == "/api/pc":  # переключатели: свой браузер (всегда), управление ПК
+            return self.send(200, {"pc_control": bool(agent.CONFIG.get("pc_control")), "browser": bool(agent.CONFIG.get("browser")),
+                                   "controlling": agent.hands.session.get("title", "") if agent.hands.session else ""})
         if u.path == "/api/projects":  # подключённые папки проектов и их задачи кода
             tasks = {t["project"]: t for t in codetools.summary_all()}
             return self.send(200, {"projects": [{"name": k, "path": str(v), "task": tasks.get(k),
@@ -314,6 +346,7 @@ class Handler(BaseHTTPRequestHandler):
             err = start(c, text)
             return self.send(409 if err else 200, {"error": err} if err else {"ok": True})
         if u.path == "/api/stop":
+            stop_control()
             if status["busy"]:
                 agent.stop_flag["stop"] = True
                 try:
@@ -331,6 +364,10 @@ class Handler(BaseHTTPRequestHandler):
                 confirm_result["ok"] = bool(b.get("ok"))
                 confirm_answer.set()
             return self.send(200, {"ok": True})
+        if u.path == "/api/pc":  # переключатель «Управление ПК» (подтверждение — на странице)
+            if status["busy"]:
+                return self.send(409, {"error": "агент сейчас работает — дождись конца или нажми «Стоп»"})
+            return self.send(200, {"pc_control": agent.set_pc_control(bool(b.get("on")))})
         if u.path == "/api/projects":  # подключить / отключить папку проекта
             if status["busy"]:
                 return self.send(409, {"error": "агент сейчас работает — дождись конца или нажми «Стоп»"})
