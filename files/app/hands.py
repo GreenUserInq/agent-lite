@@ -2,10 +2,10 @@
 # Безопасность:
 #   - сессия: control_start спрашивает пользователя «разрешить управлять окном X для задачи Y» (на 10 мин без действий);
 #   - только окно сессии: перед каждым кликом проверяется, что под курсором это окно, перед печатью — что оно активно;
-#   - белый список программ (config.json control_allow — дополнить), запрет окон банков, почты, паролей, кошельков;
+#   - белый список программ (встроенные + добавленные в окне агента: config.json control_apps), запрет окон банков, почты, паролей, кошельков;
 #   - опасные кнопки (удалить, отправить, оплатить...) — отдельное подтверждение;
 #   - стоп: кнопка «СТОП» в окошке поверх всех окон, клавиши Pause или Ctrl+Alt+S, пользователь сам двинул мышь.
-import ctypes, os, pathlib, re, subprocess, threading, time
+import ctypes, json, os, pathlib, re, subprocess, threading, time
 from ctypes import wintypes
 import settings, screen
 
@@ -231,10 +231,81 @@ def _touch():
 
 # ---------- Инструменты ----------
 
+# ---------- Список программ, которыми можно управлять (встроенные + добавленные пользователем в окне) ----------
+
+DEFAULT_NAMES = {"notepad.exe": "Блокнот", "mspaint.exe": "Paint", "explorer.exe": "Проводник", "winword.exe": "Word",
+                 "excel.exe": "Excel", "powerpnt.exe": "PowerPoint", "title:Калькулятор": "Калькулятор",
+                 "title:Calculator": "Калькулятор"}
+BROWSERS = {"chrome.exe", "msedge.exe", "firefox.exe", "opera.exe", "browser.exe", "yandex.exe", "brave.exe", "vivaldi.exe"}
+NEVER = {"keepass.exe", "keepassxc.exe", "bitwarden.exe", "1password.exe", "lastpass.exe", "cmd.exe", "powershell.exe",
+         "pwsh.exe", "windowsterminal.exe", "wt.exe", "regedit.exe", "taskmgr.exe", "mmc.exe", "python.exe", "pythonw.exe"}
+
+def _config_path():
+    return pathlib.Path(settings.HERE) / "config.json"
+
+def user_apps():
+    """Программы, добавленные пользователем: [{exe, name, path}] (config.json control_apps; старое control_allow тоже)."""
+    try:
+        data = json.loads(_config_path().read_text(encoding="utf-8-sig"))
+    except (OSError, ValueError):
+        data = {}
+    apps = [a for a in data.get("control_apps") or [] if isinstance(a, dict) and a.get("exe")]
+    for a in data.get("control_allow") or []:  # старый формат — просто имена
+        if isinstance(a, str) and not any(x["exe"].lower() == a.lower() for x in apps):
+            apps.append({"exe": a, "name": a, "path": ""})
+    return apps
+
+def _save_apps(apps):
+    path = _config_path()
+    try:
+        data = json.loads(path.read_text(encoding="utf-8-sig"))
+    except (OSError, ValueError):
+        data = {}
+    data["control_apps"] = apps
+    data.pop("control_allow", None)
+    path.write_text(json.dumps(data, ensure_ascii=False, indent=1), encoding="utf-8")
+
+def add_app(exe, name="", path=""):
+    """Разрешить программу (по имени .exe). Вернуть (ok, сообщение)."""
+    exe = os.path.basename(str(exe or "").strip())
+    if not exe.lower().endswith(".exe"):
+        return False, "Нужно имя программы .exe"
+    if exe.lower() in NEVER:
+        return False, f"{exe} нельзя отдать агенту: это командная строка, менеджер паролей или системная программа."
+    apps = [a for a in user_apps() if a["exe"].lower() != exe.lower()]
+    apps.append({"exe": exe, "name": (name or exe)[:60], "path": str(path or "")})
+    _save_apps(apps)
+    return True, f"Разрешено: {name or exe}"
+
+def remove_app(exe):
+    apps = user_apps()
+    left = [a for a in apps if a["exe"].lower() != str(exe).lower()]
+    if len(left) == len(apps):
+        return False, "Такой программы в добавленных нет (встроенные не убираются)."
+    _save_apps(left)
+    return True, f"Убрано: {exe}"
+
+def apps_overview():
+    """Для окна: встроенные, добавленные и открытые сейчас программы (разрешена ли, запрещена ли)."""
+    added = user_apps()
+    allowed = {k.lower() for k in DEFAULT_NAMES if not k.startswith("title:")} | {a["exe"].lower() for a in added}
+    seen, opened = set(), []
+    for w in screen.windows():
+        exe = w["exe"]
+        if not exe or exe.lower() in seen or exe.lower() in ("applicationframehost.exe", "rvrvpngui.exe"):
+            continue
+        seen.add(exe.lower())
+        opened.append({"exe": exe, "title": w["title"][:80], "path": w.get("path", ""), "allowed": exe.lower() in allowed,
+                       "never": exe.lower() in NEVER, "browser": exe.lower() in BROWSERS})
+    builtin = [{"exe": k, "name": v} for k, v in DEFAULT_NAMES.items() if k != "title:Calculator"]
+    return {"builtin": builtin, "added": added, "open": opened}
+
 def _allowed(w):
-    allow = [a.lower() for a in (settings.get("control_allow") or [])] + [a.lower() for a in DEFAULT_ALLOW]
+    allow = [a["exe"].lower() for a in user_apps()] + [a.lower() for a in DEFAULT_NAMES]
     exe, title = w["exe"].lower(), w["title"].lower()
-    return exe in allow or any(a.startswith("title:") and a[6:] in title for a in allow)
+    if exe in NEVER:
+        return False
+    return exe in allow or any(a.startswith("title:") and a[6:].lower() in title for a in allow)
 
 def control_start(window, task="", **_):
     """Начать сессию управления окном (с подтверждением пользователя)."""
@@ -249,8 +320,9 @@ def control_start(window, task="", **_):
     if DENY_TITLE.search(w["title"]):
         return f"Отказано: окно «{w['title']}» похоже на банк, почту, пароли или кошелёк — управлять такими нельзя."
     if not _allowed(w):
-        return (f"Программа {w['exe']} не в списке разрешённых для управления. Разрешены: " + ", ".join(DEFAULT_ALLOW) +
-                ". Добавить можно в config.json → control_allow (это делает пользователь).")
+        names = sorted({v for v in DEFAULT_NAMES.values()} | {a["name"] for a in user_apps()})
+        return (f"Программа {w['exe']} не в списке разрешённых для управления (разрешены: {', '.join(names)}). "
+                "Скажи пользователю: добавить её можно в окне агента — «Программы для управления» → «Добавить из открытых окон».")
     if not confirm(f"Разрешить агенту управлять окном «{w['title']}» ({w['exe']})?\nЗадача: {task or '—'}\n"
                    "Мышь и клавиатура будут заняты. Стоп: кнопка «СТОП» сверху экрана, Pause или Ctrl+Alt+S, или просто двинь мышь."):
         return "Пользователь не разрешил управление."
@@ -511,19 +583,30 @@ def control_open(program, **_):
              "word": "winword.exe", "ворд": "winword.exe", "excel": "excel.exe", "эксель": "excel.exe",
              "калькулятор": "calc.exe", "calc": "calc.exe", "проводник": "explorer.exe", "explorer": "explorer.exe",
              "powerpoint": "powerpnt.exe"}
-    exe = names.get(program.strip().lower(), program.strip().lower())
+    want = program.strip().lower()
+    exe = names.get(want, want)
+    added = user_apps()
+    # добавленная пользователем программа — по имени .exe или подписи (запускается по сохранённому пути)
+    hit = next((a for a in added if want in (a["exe"].lower(), a["exe"].lower()[:-4], a["name"].lower())), None)
+    if hit:
+        exe = hit["exe"].lower()
     allowed = {"notepad.exe", "mspaint.exe", "winword.exe", "excel.exe", "calc.exe", "explorer.exe", "powerpnt.exe"} | \
-              {a.lower() for a in (settings.get("control_allow") or []) if not a.lower().startswith("title:")}
-    if re.search(r"chrome|firefox|edge|opera|yandex|browser|браузер|google|гугл|яндекс|http|www\.|\.(com|ru|org|net)\b", exe):
-        return ("Обычный Chrome пользователя мышью не управляется (там почта, банки, пароли). Для интернета есть свой браузер "
+              {a["exe"].lower() for a in added}
+    if not hit and re.search(r"chrome|firefox|edge|opera|yandex|browser|браузер|google|гугл|яндекс|http|www\.|\.(com|ru|org|net)\b", exe):
+        return ("Обычный браузер пользователя не в списке разрешённых (там почта, банки, пароли). Для интернета есть свой браузер "
                 "агента: browser_search (Google), browser_open (адрес) — или web_search / web_read. "
                 "Показать страницу пользователю в его браузере — open_url.")
+    if not exe.endswith(".exe"):
+        exe += ".exe"
     if exe not in allowed:
-        return f"Запускать можно только: {', '.join(sorted(allowed))}."
+        names_ok = sorted({v for v in DEFAULT_NAMES.values()} | {a["name"] for a in added})
+        return (f"Запускать можно только: {', '.join(names_ok)}. Другую программу пользователь добавляет в окне агента "
+                "(«Программы для управления»).")
+    target = hit["path"] if hit and hit.get("path") and os.path.isfile(hit["path"]) else exe
     try:
-        os.startfile(exe)
+        os.startfile(target)
     except OSError as e:
-        return f"Не запустилось: {e}"
+        return f"Не запустилось: {e}" + (" (программу проще открыть самому — потом control_start)" if not hit or not hit.get("path") else "")
     time.sleep(2.5)
     return f"Запущено: {exe}. Дальше — control_start с заголовком его окна (list_windows)."
 

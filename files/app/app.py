@@ -331,6 +331,8 @@ class Handler(BaseHTTPRequestHandler):
             return self.send(200, {"version": agent.VERSION})
         if u.path == "/api/update/check":
             return self.send(200, updater.check())
+        if u.path == "/api/apps":  # программы для управления: встроенные, добавленные, открытые сейчас
+            return self.send(200, agent.hands.apps_overview())
         if u.path == "/api/pc":  # переключатели: свой браузер (всегда), управление ПК
             return self.send(200, {"pc_control": bool(agent.CONFIG.get("pc_control")), "browser": bool(agent.CONFIG.get("browser")),
                                    "controlling": agent.hands.session.get("title", "") if agent.hands.session else ""})
@@ -384,6 +386,14 @@ class Handler(BaseHTTPRequestHandler):
                 confirm_result["ok"] = bool(b.get("ok"))
                 confirm_answer.set()
             return self.send(200, {"ok": True})
+        if u.path == "/api/apps":  # добавить / убрать программу из разрешённых для управления
+            if b.get("action") == "add":
+                ok, msg = agent.hands.add_app(b.get("exe", ""), b.get("name", ""), b.get("path", ""))
+            elif b.get("action") == "remove":
+                ok, msg = agent.hands.remove_app(b.get("exe", ""))
+            else:
+                ok, msg = False, "неизвестное действие"
+            return self.send(200 if ok else 400, {"ok": True, "message": msg} if ok else {"error": msg})
         if u.path == "/api/pc":  # переключатель «Управление ПК» (подтверждение — на странице)
             if status["busy"]:
                 return self.send(409, {"error": "агент сейчас работает — дождись конца или нажми «Стоп»"})

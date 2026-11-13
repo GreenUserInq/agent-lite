@@ -40,7 +40,8 @@ def _cloaked(hwnd):
         return False
     return v.value != 0
 
-def _process_name(hwnd):
+def _process_path(hwnd):
+    """(полный путь к .exe, pid) процесса окна; путь пустой, если Windows не дала."""
     pid = wintypes.DWORD()
     user32.GetWindowThreadProcessId(hwnd, ctypes.byref(pid))
     h = ctypes.windll.kernel32.OpenProcess(0x1000, False, pid.value)  # PROCESS_QUERY_LIMITED_INFORMATION
@@ -50,10 +51,14 @@ def _process_name(hwnd):
         buf = ctypes.create_unicode_buffer(520)
         size = wintypes.DWORD(520)
         if ctypes.windll.kernel32.QueryFullProcessImageNameW(h, 0, buf, ctypes.byref(size)):
-            return os.path.basename(buf.value), pid.value
+            return buf.value, pid.value
     finally:
         ctypes.windll.kernel32.CloseHandle(h)
     return "", pid.value
+
+def _process_name(hwnd):
+    path, pid = _process_path(hwnd)
+    return os.path.basename(path), pid
 
 def windows():
     """Видимые окна верхнего уровня: [{hwnd, title, exe, rect, minimized, active}] — сверху вниз по Z-порядку."""
@@ -71,11 +76,12 @@ def windows():
         title = buf.value.strip()
         if not title or title in ("Program Manager",):
             return True
-        exe, pid = _process_name(hwnd)
+        path, pid = _process_path(hwnd)
+        exe = os.path.basename(path)
         raw = wintypes.RECT()
         user32.GetWindowRect(hwnd, ctypes.byref(raw))
         minimized = bool(user32.IsIconic(hwnd)) or raw.left <= -30000  # свёрнутое окно Windows уносит на −32000
-        out.append({"hwnd": int(hwnd), "title": title, "exe": exe, "pid": pid, "rect": _window_rect(hwnd),
+        out.append({"hwnd": int(hwnd), "title": title, "exe": exe, "path": path, "pid": pid, "rect": _window_rect(hwnd),
                     "minimized": minimized, "active": hwnd == fg})
         return True
     user32.EnumWindows(proc(cb), 0)
