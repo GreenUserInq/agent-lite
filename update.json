@@ -1,24 +1,24 @@
 {
- "version": "1.6.3",
- "notes": "Добавленные программы видны агенту сразу, без перезапуска; свёрнутое окно разворачивается при начале управления",
+ "version": "1.6.4",
+ "notes": "«Полный доступ» для разрешённой программы — без вопросов на старте, на «опасных» кнопках и Alt+F4; сессия сама переходит в новое окно",
  "files": [
   {
    "path": "app/agent_lite.py",
    "repo": "files/app/agent_lite.py",
-   "sha256": "623337874995b25e071ea9e7aba412563f3b57652a9e969cb32c6a70794c08fa",
+   "sha256": "4af5f829fa382e2e070229b8db33f732d56d8bb54e151668fa38f48c2e2fc82d",
    "size": 51983
   },
   {
    "path": "app/app.html",
    "repo": "files/app/app.html",
-   "sha256": "bf8b0da2123cf92e0c3d692c4e4f0dc130d33aa284af602a5d44c82afbb22f98",
-   "size": 37193
+   "sha256": "e25350e43567026244f81ea67fb7f1dd250ebf9ecbfbdcb684559be8d5b5a4a3",
+   "size": 38270
   },
   {
    "path": "app/app.py",
    "repo": "files/app/app.py",
-   "sha256": "06d168f9dab13d78f46f61dde76fada4226ad2579efb44cc821d26e5f6a832b7",
-   "size": 28037
+   "sha256": "7ce97cfd31ff7eff6db324712adef21d408112c9281f5d3c44d0fe2d62cfc790",
+   "size": 27632
   },
   {
    "path": "app/browser.py",
@@ -41,8 +41,8 @@
   {
    "path": "app/hands.py",
    "repo": "files/app/hands.py",
-   "sha256": "c17f1b9acd90345f2a7ed1ea31b54f9f5c1719cecafe95e568b186d9b31dffe8",
-   "size": 37344
+   "sha256": "5b3e34bd1ff8cd7c31e14049eb2eb6604b75e483daedf24df2cfdfade39451ed",
+   "size": 39568
   },
   {
    "path": "app/indicator.ps1",

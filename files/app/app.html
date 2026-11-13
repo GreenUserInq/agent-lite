@@ -431,6 +431,9 @@ const appsModal = document.createElement("div");
 appsModal.id = "appsModal";
 appsModal.innerHTML = '<div class="box"></div>';
 document.body.appendChild(appsModal);
+const trustBtn = a => a.trusted
+  ? `<span class="tag warn" title="Действует без вопросов">полный доступ</span> <button data-trust="${esc(a.exe)}" data-on="">С вопросами</button>`
+  : `<span class="tag ok">разрешена</span> <button data-trust="${esc(a.exe)}" data-on="1" title="Без подтверждений: старт, «опасные» кнопки, Alt+F4">Полный доступ</button>`;
 async function showApps() {
   const box = appsModal.querySelector(".box");
   box.innerHTML = "Загружаю…";
@@ -442,7 +445,7 @@ async function showApps() {
   box.innerHTML =
     `<div style="display:flex;align-items:center"><h3 style="flex:1">Программы для управления</h3><button data-close="1">✕</button></div>` +
     `<div class="hint">Агент нажимает и печатает только в этих программах — и каждый раз спрашивает разрешения на задачу. ` +
-    `Окна банков, почты, паролей и кошельков запрещены всегда. Остановить: «СТОП» сверху экрана, Pause, Ctrl+Alt+S или движение мыши.</div>` +
+    `«Полный доступ» — без вопросов вообще: и на старте, и на кнопках вроде «Удалить», «Отправить». Окна банков, почты, паролей и кошельков запрещены всегда. Остановить: «СТОП» сверху экрана, Pause, Ctrl+Alt+S или движение мыши.</div>` +
     `<h3>Открыты сейчас — добавить одной кнопкой</h3>` +
     (open.length ? open.map(o => row(esc(o.exe.replace(/\.exe$/i, "")), esc(o.title),
         o.never ? `<span class="tag">нельзя</span>` :
@@ -452,10 +455,10 @@ async function showApps() {
     `<div style="margin:6px 0 12px"><button data-refresh="1">↻ Обновить список</button></div>` +
     `<h3>Добавлены вами</h3>` +
     (d.added.length ? d.added.map(a => row(esc(a.name), esc(a.exe) + (a.path ? "" : " · без пути — агент не сможет запустить её сам"),
-        `<span class="tag ok">разрешена</span> <button class="danger" data-remove="${esc(a.exe)}">Убрать</button>`)).join("")
+        trustBtn(a) + ` <button class="danger" data-remove="${esc(a.exe)}">Убрать</button>`)).join("")
       : `<div class="hint">Пока ничего.</div>`) +
     `<h3 style="margin-top:12px">Встроенные</h3>` +
-    d.builtin.map(b => row(esc(b.name), esc(b.exe.replace(/^title:/, "окно «") + (b.exe.startsWith("title:") ? "»" : "")), `<span class="tag ok">всегда</span>`)).join("");
+    d.builtin.map(b => row(esc(b.name), esc(b.exe), trustBtn(b))).join("");
 }
 appsModal.addEventListener("click", async e => {
   if (e.target === appsModal || e.target.closest("[data-close]")) { appsModal.classList.remove("on"); return; }
@@ -465,6 +468,10 @@ appsModal.addEventListener("click", async e => {
       if (b.dataset.browser && !confirm("Это браузер: в нём ваши почта, аккаунты и, возможно, банки. Агент всё равно не тронет окна " +
           "с банками, почтой и паролями в заголовке, но точно разрешить управление браузером?")) return;
       await api("/api/apps", {method: "POST", json: {action: "add", exe: b.dataset.add, name: b.dataset.name, path: b.dataset.path}});
+    } else if (b.dataset.trust) {
+      if (b.dataset.on && !confirm("Полный доступ к " + b.dataset.trust + ": агент будет нажимать и печатать в этой программе без вопросов, " +
+          "включая удаление, отправку и закрытие окна. Остановить: «СТОП» сверху экрана, Pause, Ctrl+Alt+S или движение мыши. Включить?")) return;
+      await api("/api/apps", {method: "POST", json: {action: "trust", exe: b.dataset.trust, on: !!b.dataset.on}});
     } else if (b.dataset.remove) {
       await api("/api/apps", {method: "POST", json: {action: "remove", exe: b.dataset.remove}});
     }

@@ -391,6 +391,8 @@ class Handler(BaseHTTPRequestHandler):
                 ok, msg = agent.hands.add_app(b.get("exe", ""), b.get("name", ""), b.get("path", ""))
             elif b.get("action") == "remove":
                 ok, msg = agent.hands.remove_app(b.get("exe", ""))
+            elif b.get("action") == "trust":
+                ok, msg = agent.hands.set_trusted(b.get("exe", ""), bool(b.get("on")))
             else:
                 ok, msg = False, "неизвестное действие"
             return self.send(200 if ok else 400, {"ok": True, "message": msg} if ok else {"error": msg})

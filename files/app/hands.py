@@ -265,6 +265,38 @@ def _save_apps(apps):
     data.pop("control_allow", None)
     path.write_text(json.dumps(data, ensure_ascii=False, indent=1), encoding="utf-8")
 
+def _trusted_set():
+    """Программы с полным доступом (без вопросов внутри): exe в нижнем регистре."""
+    try:
+        data = json.loads(_config_path().read_text(encoding="utf-8-sig"))
+    except (OSError, ValueError):
+        data = {}
+    return {str(x).lower() for x in data.get("control_trusted") or []} - NEVER
+
+def is_trusted(exe):
+    return str(exe or "").lower() in _trusted_set()
+
+def set_trusted(exe, on):
+    """Полный доступ: агент действует в программе без подтверждений (кроме окон банков/почты/паролей)."""
+    exe = os.path.basename(str(exe or "").strip())
+    low = exe.lower()
+    if low in NEVER:
+        return False, f"{exe} нельзя отдать агенту."
+    builtin = {k.lower() for k in DEFAULT_NAMES if not k.startswith("title:")}
+    if on and low not in builtin and low not in {a["exe"].lower() for a in user_apps()}:
+        return False, "Сначала разрешите программу."
+    path = _config_path()
+    try:
+        data = json.loads(path.read_text(encoding="utf-8-sig"))
+    except (OSError, ValueError):
+        data = {}
+    cur = [x for x in data.get("control_trusted") or [] if str(x).lower() != low]
+    if on:
+        cur.append(exe)
+    data["control_trusted"] = cur
+    path.write_text(json.dumps(data, ensure_ascii=False, indent=1), encoding="utf-8")
+    return True, (f"Полный доступ: {exe}" if on else f"Снова с вопросами: {exe}")
+
 def add_app(exe, name="", path=""):
     """Разрешить программу (по имени .exe). Вернуть (ok, сообщение)."""
     exe = os.path.basename(str(exe or "").strip())
@@ -283,6 +315,7 @@ def remove_app(exe):
     if len(left) == len(apps):
         return False, "Такой программы в добавленных нет (встроенные не убираются)."
     _save_apps(left)
+    set_trusted(exe, False)
     return True, f"Убрано: {exe}"
 
 def apps_overview():
@@ -297,7 +330,9 @@ def apps_overview():
         seen.add(exe.lower())
         opened.append({"exe": exe, "title": w["title"][:80], "path": w.get("path", ""), "allowed": exe.lower() in allowed,
                        "never": exe.lower() in NEVER, "browser": exe.lower() in BROWSERS})
-    builtin = [{"exe": k, "name": v} for k, v in DEFAULT_NAMES.items() if k != "title:Calculator"]
+    trusted = _trusted_set()
+    builtin = [{"exe": k, "name": v, "trusted": k.lower() in trusted} for k, v in DEFAULT_NAMES.items() if not k.startswith("title:")]
+    added = [dict(a, trusted=a["exe"].lower() in trusted) for a in added]
     return {"builtin": builtin, "added": added, "open": opened}
 
 def allowed_names():
@@ -322,7 +357,10 @@ def control_start(window, task="", **_):
         if _stop_requested():
             _end("нажат «Стоп»")
         else:
-            return f"Сессия уже идёт: окно «{session['title']}». Закончить — control_stop."
+            w0 = screen.find_window(window)
+            if not w0 or w0["hwnd"] == session["hwnd"]:
+                return f"Сессия уже идёт: окно «{session['title']}» — действуй (control_click, control_type, control_keys)."
+            _end("переход в другое окно")  # другое окно (например, программа открыла новое) — сессия переходит туда
     w = screen.find_window(window)
     if not w:
         return f"Окно «{window}» не найдено. Открой программу (control_open) или посмотри list_windows."
@@ -332,7 +370,8 @@ def control_start(window, task="", **_):
         names = allowed_names()
         return (f"Программа {w['exe']} не в списке разрешённых для управления (разрешены: {', '.join(names)}). "
                 "Скажи пользователю: добавить её можно в окне агента — «Программы для управления» → «Добавить из открытых окон».")
-    if not confirm(f"Разрешить агенту управлять окном «{w['title']}» ({w['exe']})?\nЗадача: {task or '—'}\n"
+    trusted = is_trusted(w["exe"])
+    if not trusted and not confirm(f"Разрешить агенту управлять окном «{w['title']}» ({w['exe']})?\nЗадача: {task or '—'}\n"
                    "Мышь и клавиатура будут заняты. Стоп: кнопка «СТОП» сверху экрана, Pause или Ctrl+Alt+S, или просто двинь мышь."):
         return "Пользователь не разрешил управление."
     try:
@@ -347,7 +386,7 @@ def control_start(window, task="", **_):
                                creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
     except OSError:
         pass
-    session.update(hwnd=w["hwnd"], title=w["title"], exe=w["exe"], pid=w["pid"], task=task, indicator=ind, cursor=None,
+    session.update(hwnd=w["hwnd"], title=w["title"], exe=w["exe"], pid=w["pid"], task=task, indicator=ind, cursor=None, trusted=trusted,
                    until=time.time() + IDLE_LIMIT)
     restored = ""
     if w.get("minimized") or user32.IsIconic(w["hwnd"]):
@@ -382,7 +421,7 @@ def control_click(name="", double=False, right=False, **_):
     el, err = _find_element(name)
     if not el:
         return "Не нажато: " + err
-    if DANGER.search(el.get("name") or "") and not confirm(
+    if not session.get("trusted") and DANGER.search(el.get("name") or "") and not confirm(
             f"Агент хочет нажать «{el.get('name')}» в окне «{session['title']}». Это может быть необратимо. Нажать?"):
         return "Пользователь не разрешил это нажатие."
     if not el.get("enabled", True):
@@ -475,7 +514,7 @@ def control_click_visual(target, text="", double=False, right=False, **_):
     model = grounding_model()
     if not model:
         return "Нет модели для поиска на снимке (нужна qwen3.5:9b или config grounding_model с поддержкой картинок)."
-    if DANGER.search(target) and not confirm(
+    if not session.get("trusted") and DANGER.search(target) and not confirm(
             f"Агент хочет нажать «{target}» в окне «{session['title']}». Это может быть необратимо. Нажать?"):
         return "Пользователь не разрешил это нажатие."
     bad = _focus()
@@ -567,7 +606,7 @@ def control_keys(keys, **_):
         vks = [_vk(p) for p in parts]
         if None in vks:
             return f"Не знаю клавишу в «{combo}». Можно: буквы/цифры, " + ", ".join(sorted(VK))
-        if "alt" in parts and "f4" in parts and not confirm(f"Агент хочет закрыть окно «{session['title']}» (Alt+F4). Разрешить?"):
+        if "alt" in parts and "f4" in parts and not session.get("trusted") and not confirm(f"Агент хочет закрыть окно «{session['title']}» (Alt+F4). Разрешить?"):
             return "Пользователь не разрешил закрыть окно."
         bad = _focus()
         if bad:

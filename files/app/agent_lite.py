@@ -4,7 +4,7 @@
 import json, pathlib, random, re, time, urllib.error, urllib.parse, urllib.request
 import codetools, screen, hands, browser, docs  # общие модули с полным агентом (настройки — settings.py лайта)
 
-VERSION = "1.6.3"  # версия окна агента; make_release.py ставит её сам
+VERSION = "1.6.4"  # версия окна агента; make_release.py ставит её сам
 APP = pathlib.Path(__file__).parent
 ROOT = APP.parent
 IMAGES_DIR = ROOT / "images"
