@@ -411,7 +411,7 @@ async function pcState() {
     $("#pc").innerHTML = `<div><b>Управление ПК</b>: ${s.pc_control ? '<span style="color:var(--ok)">включено</span>' : "выключено"}` +
       (s.controlling ? `<div class="warn">сейчас управляет: ${esc(s.controlling)}</div>` : "") +
       `</div><div class="btns"><button id="pcToggle">${s.pc_control ? "Выключить" : "Включить"}</button>` +
-      (s.pc_control ? `<button id="appsBtn" title="Какими программами агенту можно управлять">Программы</button>` : "") + `</div>` +
+      `<button id="appsBtn" title="Какими программами агенту можно управлять">Программы</button>` + `</div>` +
       (s.browser ? `<div title="Отдельный Chrome без ваших аккаунтов: поиск в Google и сайты">Браузер агента: есть</div>` : "");
     $("#pcToggle").onclick = async () => {
       if (!s.pc_control && !confirm("Включить управление ПК?\n\nАгент сможет делать снимки экрана, видеть окна и — только с вашего " +

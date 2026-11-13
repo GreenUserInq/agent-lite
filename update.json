@@ -1,18 +1,18 @@
 {
- "version": "1.6.1",
- "notes": "Кнопка «Программы» в блоке управления ПК: разрешить открытые программы одной кнопкой",
+ "version": "1.6.2",
+ "notes": "Кнопка «Программы» видна всегда, даже при выключенном управлении ПК",
  "files": [
   {
    "path": "app/agent_lite.py",
    "repo": "files/app/agent_lite.py",
-   "sha256": "a30990e96c30995135e3bb4cadd3c9977e9b09533c5fa96040be0d86f9248327",
+   "sha256": "8a7143bf140c4f1437eb205c69fa745aae2458a74ac61d3edcda4696cea9bf19",
    "size": 51440
   },
   {
    "path": "app/app.html",
    "repo": "files/app/app.html",
-   "sha256": "bde5379b9badd8057caf96949f03a3baf049b79445fb331e3cba2ae48ac687d9",
-   "size": 37215
+   "sha256": "bf8b0da2123cf92e0c3d692c4e4f0dc130d33aa284af602a5d44c82afbb22f98",
+   "size": 37193
   },
   {
    "path": "app/app.py",
