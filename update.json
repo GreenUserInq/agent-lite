@@ -1,12 +1,12 @@
 {
- "version": "1.6.2",
- "notes": "Кнопка «Программы» видна всегда, даже при выключенном управлении ПК",
+ "version": "1.6.3",
+ "notes": "Добавленные программы видны агенту сразу, без перезапуска; свёрнутое окно разворачивается при начале управления",
  "files": [
   {
    "path": "app/agent_lite.py",
    "repo": "files/app/agent_lite.py",
-   "sha256": "8a7143bf140c4f1437eb205c69fa745aae2458a74ac61d3edcda4696cea9bf19",
-   "size": 51440
+   "sha256": "623337874995b25e071ea9e7aba412563f3b57652a9e969cb32c6a70794c08fa",
+   "size": 51983
   },
   {
    "path": "app/app.html",
@@ -41,8 +41,8 @@
   {
    "path": "app/hands.py",
    "repo": "files/app/hands.py",
-   "sha256": "37595398c7e3f8b179fb52dd4ee3833ae18bcc1d3b840e80d370ec24393d11b3",
-   "size": 36125
+   "sha256": "c17f1b9acd90345f2a7ed1ea31b54f9f5c1719cecafe95e568b186d9b31dffe8",
+   "size": 37344
   },
   {
    "path": "app/indicator.ps1",
@@ -59,8 +59,8 @@
   {
    "path": "app/screen.py",
    "repo": "files/app/screen.py",
-   "sha256": "551c8e133a56d1cc33e11ac210e22ec43a4d18754463e725726695175779af41",
-   "size": 17766
+   "sha256": "0c3bd4e807e7899ec5d7b5c2439c0eb41a9da9a691986ce4d0227afd2640ff03",
+   "size": 18039
   },
   {
    "path": "app/services.ps1",

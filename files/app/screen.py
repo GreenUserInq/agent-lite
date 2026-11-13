@@ -119,7 +119,8 @@ def _grab(window=""):
         if not w:
             return None, f"Окно «{window}» не найдено. Список — list_windows.", None
         if w["minimized"]:
-            return None, f"Окно «{w['title']}» свёрнуто — его не видно на экране.", None
+            return None, (f"Окно «{w['title']}» свёрнуто — его не видно на экране. Развернуть: control_start с этим окном "
+                         "(оно развернётся само), или попроси пользователя."), None
         l, t, r, b = w["rect"]
         img = ImageGrab.grab(bbox=(l, t, r, b), all_screens=True)
         return img, f"окно «{w['title']}» ({w['exe']})", (l, t)
@@ -319,7 +320,7 @@ def ui_elements(window="", depth=6, limit=150, **_):
     if isinstance(items, dict):
         items = [items]
     if w["minimized"] or (items and all(e.get("x", 0) < -10000 for e in items)):
-        return f"Окно «{w['title']}» свёрнуто — его элементов на экране нет."
+        return f"Окно «{w['title']}» свёрнуто — его элементов на экране нет. Развернуть: control_start с этим окном (развернётся само)."
     items = [e for e in items if e.get("x", 0) > -10000]
     if len(items) <= 4:
         names = ", ".join(f"{e.get('type')} «{(e.get('name') or '')[:30]}»" for e in items)

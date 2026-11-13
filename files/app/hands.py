@@ -300,6 +300,15 @@ def apps_overview():
     builtin = [{"exe": k, "name": v} for k, v in DEFAULT_NAMES.items() if k != "title:Calculator"]
     return {"builtin": builtin, "added": added, "open": opened}
 
+def allowed_names():
+    """Подписи разрешённых сейчас программ (встроенные + добавленные пользователем) — читается заново при каждом вызове."""
+    return sorted({v for v in DEFAULT_NAMES.values()} | {a["name"] for a in user_apps()})
+
+def open_description():
+    """Описание control_open для модели — с текущим списком (пользователь добавляет программы, пока агент работает)."""
+    return ("Запустить разрешённую программу: " + ", ".join(allowed_names()) +
+            ". Список меняется: пользователь добавляет программы в окне агента — проверяй вызовом, а не по памяти.")
+
 def _allowed(w):
     allow = [a["exe"].lower() for a in user_apps()] + [a.lower() for a in DEFAULT_NAMES]
     exe, title = w["exe"].lower(), w["title"].lower()
@@ -320,7 +329,7 @@ def control_start(window, task="", **_):
     if DENY_TITLE.search(w["title"]):
         return f"Отказано: окно «{w['title']}» похоже на банк, почту, пароли или кошелёк — управлять такими нельзя."
     if not _allowed(w):
-        names = sorted({v for v in DEFAULT_NAMES.values()} | {a["name"] for a in user_apps()})
+        names = allowed_names()
         return (f"Программа {w['exe']} не в списке разрешённых для управления (разрешены: {', '.join(names)}). "
                 "Скажи пользователю: добавить её можно в окне агента — «Программы для управления» → «Добавить из открытых окон».")
     if not confirm(f"Разрешить агенту управлять окном «{w['title']}» ({w['exe']})?\nЗадача: {task or '—'}\n"
@@ -340,7 +349,13 @@ def control_start(window, task="", **_):
         pass
     session.update(hwnd=w["hwnd"], title=w["title"], exe=w["exe"], pid=w["pid"], task=task, indicator=ind, cursor=None,
                    until=time.time() + IDLE_LIMIT)
-    return (f"Управление окном «{w['title']}» разрешено. Действуй: control_click (по имени элемента из ui_elements), "
+    restored = ""
+    if w.get("minimized") or user32.IsIconic(w["hwnd"]):
+        user32.ShowWindow(w["hwnd"], 9)  # SW_RESTORE — свёрнутое окно разворачивается, иначе его не видно и не нажать
+        time.sleep(0.5)
+        restored = " Окно было свёрнуто — развёрнуто."
+    _focus()
+    return (f"{restored.strip()} " if restored else "") + (f"Управление окном «{w['title']}» разрешено. Действуй: control_click (по имени элемента из ui_elements), "
             "control_type, control_keys. Закончил — control_stop.")
 
 def _find_element(name):
