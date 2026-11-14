@@ -4,7 +4,7 @@
 import json, pathlib, random, re, time, urllib.error, urllib.parse, urllib.request
 import codetools, screen, hands, browser, docs, handoff  # общие модули с полным агентом (настройки — settings.py лайта)
 
-VERSION = "1.7.0"  # версия окна агента; make_release.py ставит её сам
+VERSION = "1.7.1"  # версия окна агента; make_release.py ставит её сам
 APP = pathlib.Path(__file__).parent
 ROOT = APP.parent
 IMAGES_DIR = ROOT / "images"
@@ -633,16 +633,32 @@ def fit_context(messages, tools, num_ctx=None):
     return size()
 
 def cut_loop(text, times=3, min_len=25):
-    """Модель зациклилась (одна и та же фраза ≥ times раз) — текст до второго повтора, иначе None."""
+    """Модель зациклилась — вернуть текст до второго повтора, иначе None.
+    Петля — фраза повторяется ≥ times раз И куски текста между повторами почти одинаковые (модель крутит один и тот же
+    блок). Заголовки, подписи «Источник:» и строки-шаблоны в отчётах повторяются законно — по ним не режем."""
+    import difflib
+    norm = lambda s: " ".join(re.sub(r"[*_#>`|-]+", " ", s).lower().split())
+    parts = re.split(r"(?<=[.!?…])\s+|\n+", text)
     seen = {}
-    for p in re.split(r"(?<=[.!?…])\s+|\n+", text):
-        k = " ".join(p.lower().split())
-        if len(k) >= min_len:
-            seen[k] = seen.get(k, 0) + 1
-            if seen[k] >= times:
-                first = text.find(p)
-                second = text.find(p, first + len(p))
-                return text[:second].rstrip() if second > 0 else None
+    for p in parts:
+        k = norm(p)
+        if len(k) < min_len or k.endswith(":"):
+            continue
+        seen.setdefault(k, []).append(p)
+        if len(seen[k]) < times:
+            continue
+        pos, at = [], 0  # места повторов в тексте
+        while len(pos) < times:
+            i = text.find(p, at)
+            if i < 0:
+                break
+            pos.append(i)
+            at = i + len(p)
+        if len(pos) < times:
+            continue
+        bodies = [norm(text[pos[j]:pos[j + 1]])[:2000] for j in range(len(pos) - 1)]
+        if all(difflib.SequenceMatcher(None, bodies[0], b).ratio() >= 0.95 for b in bodies[1:]):
+            return text[:pos[1]].rstrip()
     return None
 
 def chat(messages, think=False, use_tools=True):
