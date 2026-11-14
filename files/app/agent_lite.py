@@ -4,7 +4,7 @@
 import json, pathlib, random, re, time, urllib.error, urllib.parse, urllib.request
 import codetools, screen, hands, browser, docs, handoff  # общие модули с полным агентом (настройки — settings.py лайта)
 
-VERSION = "1.8.2"  # версия окна агента; make_release.py ставит её сам
+VERSION = "1.8.3"  # версия окна агента; make_release.py ставит её сам
 APP = pathlib.Path(__file__).parent
 ROOT = APP.parent
 IMAGES_DIR = ROOT / "images"
@@ -548,6 +548,7 @@ DOC_SYSTEM = f"""
 абзац целиком — set, новое — insert/append. Сделать PDF — doc_to_pdf; прочитать PDF — doc_read (файл) или browser_read (открытый в браузере); показать пользователю — doc_open.
 Копия PDF в Word («точная копия», «переведи в ворд», «замени в нём …») — pdf_to_word, затем doc_edit replace; НЕ перепечатывай
 PDF своими словами. Большой новый документ — не одним вызовом: doc_create с началом, дальше doc_edit append частями.
+Замена ФИО и других имён: в документе они бывают в разных падежах (Андрейкин / Андрейкина / Андрейкину) и сокращённо (Андрейкин Д.А.) — прочитай весь документ (doc_read), найди все упоминания по основе фамилии и замени каждую форму той же формой нового имени (Иванов / Иванова / Иванову, Иванов И.И.).
 «Найди в интернете и сделай документ»: browser_search → browser_open/browser_read → doc_create (в конце «Источник: адрес»)."""
 
 DOC_TOOLS = [
@@ -564,7 +565,7 @@ DOC_TOOLS = [
           {"path": S, "action": {"type": "string", "enum": ["replace", "set", "insert", "append", "delete"]},
            "n": {"type": "integer"}, "text": S, "old": S, "new": S, "count": {"type": "integer"}}, ["path", "action"]),
     _tool("pdf_to_word", "Сделать из PDF документ Word (.docx) с той же вёрсткой (через Word); потом правки — doc_edit replace. "
-          "out — путь нового файла (пусто — рядом с PDF).", {"path": S, "out": S}, ["path"]),
+          "out — путь нового файла (пусто — рядом с PDF).", {"path": S, "out": S, "engine": {"type": "string", "enum": ["auto", "pdf2docx", "word"], "description": "конвертер: auto (точный pdf2docx, не вышло — Word)"}}, ["path"]),
     _tool("doc_to_pdf", "Сохранить документ Word как PDF рядом (нужен установленный Word).", {"path": S}, ["path"]),
     _tool("doc_open", "Открыть документ у пользователя (Word или программа по умолчанию).", {"path": S}, ["path"]),
 ]

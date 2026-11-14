@@ -9,7 +9,7 @@
 # .doc: перед чтением/правкой Word делает из него рабочую копию .docx, после правки сохраняет обратно в .doc.
 # Перед любой правкой — копия файла в <данные>\doc_backups\.
 import datetime, hashlib, json, os, pathlib, re, shutil, subprocess, tempfile
-import settings, pdfread
+import settings, pdfread, pdfword
 
 IMPORT_ERROR = ""
 
@@ -459,8 +459,9 @@ def doc_edit(path, action, n=0, text="", old="", new="", count=1, **_):
         return f"Не сохранено: {err}. Документ не изменён (копия: {bak})."
     return f"Готово: {p.name}, изменено {done}. Копия до правки: {bak}"
 
-def pdf_to_word(path, out="", **_):
-    """PDF → документ Word (.docx) установленным Word: вёрстка, таблицы и шрифты сохраняются (насколько Word их распознаёт).
+def pdf_to_word(path, out="", engine="auto", **_):
+    """PDF → документ Word (.docx). Сначала точным конвертером pdf2docx (вёрстка, таблицы, картинки по координатам PDF),
+    не вышло — установленным Word (содержимое то же, вёрстка грубее). engine: auto / pdf2docx / word.
     Дальше копию правят обычным doc_read / doc_edit."""
     p = pathlib.Path(str(path).strip().strip('"'))
     if not p.is_file():
@@ -477,11 +478,30 @@ def pdf_to_word(path, out="", **_):
                 dst = cand
                 break
     dst.parent.mkdir(parents=True, exist_ok=True)
-    err = word_convert(p, dst, dst.suffix.lower().lstrip("."))
-    if err:
-        return f"Ошибка: {err}"
-    return (f"Готово: {dst}\nЭто копия PDF в Word (вёрстка из PDF). Заменить слова, имена, даты — doc_edit action=replace "
-            "(old → new по всему документу); посмотреть, что получилось, — doc_read.")
+    engine = str(engine or "auto").lower()
+    note, used = "", ""
+    if engine != "word" and dst.suffix.lower() == ".docx":
+        state = pdfword.ensure()
+        if state == "ставится":
+            if engine == "pdf2docx":
+                return ("Точный конвертер PDF → Word ставится (1–3 минуты, один раз). Скажи пользователю и повтори pdf_to_word "
+                        "через пару минут.")
+            note = "точный конвертер ещё ставится — эта копия сделана через Word (вёрстка грубее); через пару минут можно переделать"
+        elif state:
+            note = f"точный конвертер не установился ({state[:120]}) — копия через Word"
+        else:
+            err = pdfword.convert(p, dst)
+            if not err:
+                used = "pdf2docx"
+            else:
+                note = f"точный конвертер не справился ({err[:120]}) — копия через Word"
+    if not used:
+        err = word_convert(p, dst, dst.suffix.lower().lstrip("."))
+        if err:
+            return f"Ошибка: {err}" + (f" ({note})" if note else "")
+        used = "Word"
+    return (f"Готово: {dst}\nКопия PDF в Word (конвертер: {used}{'; ' + note if note else ''}). Заменить слова, имена, даты — "
+            "doc_edit action=replace (old → new по всему документу); посмотреть, что получилось, — doc_read.")
 
 def doc_to_pdf(path, **_):
     """Сохранить документ как PDF рядом (через Word)."""
