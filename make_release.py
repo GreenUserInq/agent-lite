@@ -7,7 +7,7 @@ import hashlib, json, pathlib, re, sys, zipfile
 
 KIT = pathlib.Path(__file__).parent
 DIST = KIT.parent / "lite_dist" / "AgentInstaller.zip"
-SKIP_DIRS = {"__pycache__", ".git"}
+SKIP_DIRS = {"pylibs", "__pycache__", ".git"}
 SKIP_FILES = {"config.json"}
 
 def install_path(rel):
