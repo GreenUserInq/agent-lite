@@ -2,9 +2,9 @@
 # Работа с кодом — только в папках проектов, которые человек сам подключил в окне («Проекты»): чтение, поиск,
 # правка с подтверждением, проверка сборки, снимки git для отката. Команд и других файлов на компьютере агент не трогает.
 import json, pathlib, random, re, time, urllib.error, urllib.parse, urllib.request
-import codetools, screen, hands, browser, docs  # общие модули с полным агентом (настройки — settings.py лайта)
+import codetools, screen, hands, browser, docs, handoff  # общие модули с полным агентом (настройки — settings.py лайта)
 
-VERSION = "1.6.4"  # версия окна агента; make_release.py ставит её сам
+VERSION = "1.7.0"  # версия окна агента; make_release.py ставит её сам
 APP = pathlib.Path(__file__).parent
 ROOT = APP.parent
 IMAGES_DIR = ROOT / "images"
@@ -612,6 +612,12 @@ def clean_args(args):
 
 _ctx = {"chars_per_token": 3.2}  # замер на русских беседах ~3.3; уточняется по каждому ответу Ollama
 
+def context_fill(messages):
+    """Какая доля контекста модели занята сейчас (история + описания инструментов из последнего запроса)."""
+    chars = _ctx.get("tools_chars", 0) + len(json.dumps(messages, ensure_ascii=False))
+    ctx = _ctx.get("num_ctx") or CONFIG["num_ctx"]
+    return chars / _ctx["chars_per_token"] / ctx
+
 def fit_context(messages, tools, num_ctx=None):
     """Обрезать историю ПО ТОКЕНАМ, чтобы на ответ всегда оставалось reply_reserve токенов (иначе ответ обрывается
     на полуслове). Выкидываются самые старые реплики целиком; текущая — никогда. Возвращает число символов.
@@ -646,6 +652,7 @@ def chat(messages, think=False, use_tools=True):
     opts = {"temperature": CONFIG["temperature"], "num_ctx": CONFIG["num_ctx"], "num_predict": CONFIG["reply_reserve"],
             **model_options(model)}
     _ctx["num_ctx"] = opts["num_ctx"]  # для compact_results
+    _ctx["tools_chars"] = len(json.dumps(tools, ensure_ascii=False)) if tools else 0
     sent = fit_context(messages, tools, opts["num_ctx"])
     body = {"model": model, "messages": messages, "tools": tools, "stream": False, "think": bool(think), "options": opts}
     if not use_tools:
@@ -653,8 +660,13 @@ def chat(messages, think=False, use_tools=True):
     for attempt in range(3):
         try:
             r = http(f"{CONFIG['ollama']}/api/chat", body, timeout=600)
-            if r.get("prompt_eval_count"):
-                _ctx["chars_per_token"] = max(1.5, min(5.0, sent / r["prompt_eval_count"]))
+            used = sent / _ctx["chars_per_token"]  # токенов в контексте (оценка до уточнения)
+            if r.get("prompt_eval_count") and sent / r["prompt_eval_count"] <= 5.0:
+                # подстроить оценку «символов на токен» по факту; при попадании в кэш Ollama считает только новые
+                # токены (отношение > 5) — такой ответ для оценки не годится
+                _ctx["chars_per_token"] = max(1.5, sent / r["prompt_eval_count"])
+            _ctx["last"] = {"prompt": r.get("prompt_eval_count") or 0, "out": r.get("eval_count") or 0,
+                            "used": used + (r.get("eval_count") or 0), "num_ctx": opts["num_ctx"]}
             msg = r["message"]
             if r.get("done_reason") == "length" and msg.get("tool_calls"):
                 # ответ оборвался на пределе длины, а в нём вызов — его данные наверняка неполные, не выполнять

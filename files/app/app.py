@@ -159,16 +159,48 @@ def worker(chat, text):
         agent.CURRENT_REQUEST = text  # название задачи кода, если агент начнёт править проект
         guard = agent.LoopGuard()
         steps = agent.max_steps()
-        for step in range(steps):
+        first_ev = len(chat.events)
+        meter = agent.handoff.Meter()        # время и токены сессий этой задачи
+        start = len(chat.messages) - 1       # с какого сообщения началась задача
+
+        def ask_text(msgs):  # ответ модели без инструментов (записка для следующей сессии)
+            m = agent.chat(msgs, chat.think, use_tools=False)
+            meter.note(agent._ctx.get("last"))
+            return m.get("content") or ""
+
+        step = -1
+        while True:
+            step += 1
+            if step >= steps:
+                progress("шаги кончились — пишет, что сделано и что осталось…")
+                reply = agent.wrap_up(chat.messages, chat.think)
+                meter.note(agent._ctx.get("last"))
+                chat.add("assistant", reply, docs=docs_in(reply))
+                chat.add("info", "Задача не закончена за один раз. Напиши «продолжай», чтобы агент закончил.")
+                break
             if agent.stop_flag["stop"]:
                 chat.add("info", "Остановлено.")
                 break
-            progress("думает…" + (f" (шаг {step + 1} из {steps})" if step else ""))
+            if step:  # контекст почти полон — записка и новая сессия (со свежим запасом шагов)
+                progress("контекст заполняется — пишет записку для следующей сессии…")
+                ho, start = agent.handoff.check(chat.messages, start, agent.context_fill, ask_text, meter)
+                if ho and ho.get("session"):
+                    chat.add("handoff", meter.session_text(ho["session"]) + f" → задача передана в сессию {meter.number}",
+                             note=ho["note"])
+                    guard = agent.LoopGuard()
+                    step = 0
+                elif ho and ho.get("limit"):
+                    chat.add("info", f"Задача прошла уже {meter.number} сессий и не закончена — остановился. "
+                                     "Напиши «продолжай», если всё идёт как надо.")
+                    break
+            progress("думает…" + (f" (сессия {meter.number}, шаг {step + 1} из {steps})" if meter.number > 1
+                                  else f" (шаг {step + 1} из {steps})" if step else ""))
             try:
                 msg = agent.chat(chat.messages, chat.think)
             except Exception as e:
                 chat.add("error", f"Модель не ответила: {e}. Перезапусти агента ярлыком «Агент».")
                 break
+            meter.note(agent._ctx.get("last"))
             chat.messages.append({k: v for k, v in msg.items() if k in ("role", "content", "tool_calls")})
             agent.compact_results(chat.messages)
             calls = msg.get("tool_calls") or []
@@ -202,11 +234,12 @@ def worker(chat, text):
                 ev["docs"] = docs_in(str(result))
                 chat.messages.append({"role": "tool", "content": str(result), "tool_name": name})
                 bump()
+        # время и токены задачи — строкой под последним ответом
+        last_ans = next((e for e in reversed(chat.events[first_ev:]) if e["type"] == "assistant"), None)
+        if last_ans is not None:
+            last_ans["stats"] = meter.task_text()
         else:
-            progress("шаги кончились — пишет, что сделано и что осталось…")
-            reply = agent.wrap_up(chat.messages, chat.think)
-            chat.add("assistant", reply, docs=docs_in(reply))
-            chat.add("info", "Задача не закончена за один раз. Напиши «продолжай», чтобы агент закончил.")
+            chat.add("stats", meter.task_text())
         chat.messages = agent.trim_history(chat.messages)
     except Exception as e:
         chat.add("error", f"Ошибка: {e}")

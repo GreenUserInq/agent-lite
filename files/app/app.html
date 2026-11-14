@@ -111,6 +111,11 @@ label.toggle { font-size: 13px; color: var(--dim); display: flex; align-items: c
 #lightbox .cap { position: fixed; bottom: 10px; left: 0; right: 0; text-align: center; color: var(--dim); font-size: 13px; }
 #lightbox .nav { position: fixed; top: 50%; transform: translateY(-50%); font-size: 30px; background: rgba(0,0,0,.4); border: none; padding: 10px 16px; }
 #lightbox .prev { left: 10px; } #lightbox .next { right: 10px; }
+
+.stats { color: var(--dim); font-size: 11.5px; margin: -2px 0 8px 2px; opacity: .85; }
+.handoff { border-left: 3px solid var(--warn); padding: 4px 10px; margin: 8px 0; font-size: 12.5px; color: var(--dim); }
+.handoff summary { cursor: pointer; }
+.handoff pre { white-space: pre-wrap; font-size: 12px; margin: 6px 0 2px; color: var(--text, inherit); }
 </style>
 </head>
 <body>
@@ -193,7 +198,10 @@ function docsHtml(list) {
 }
 function evHtml(ev, st) {
   if (ev.type === "user") return `<div class="msg">${esc(ev.text)}</div>`;
-  if (ev.type === "assistant") return `<div class="msg">${md(ev.text)}</div>` + docsHtml(ev.docs);
+  if (ev.type === "assistant") return `<div class="msg">${md(ev.text)}</div>` + docsHtml(ev.docs) +
+    (ev.stats ? `<div class="stats">${esc(ev.stats)}</div>` : "");
+  if (ev.type === "stats") return `<div class="stats">${esc(ev.text)}</div>`;
+  if (ev.type === "handoff") return `<details class="handoff"><summary>↪ ${esc(ev.text)}</summary><pre>${esc(ev.note || "")}</pre></details>`;
   if (ev.type === "confirm") {
     const waiting = ev.answer === null || ev.answer === undefined;
     return `<div class="confirm">⚠ Агент просит разрешения:<div class="q">${esc(ev.text)}</div>` +
