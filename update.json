@@ -1,12 +1,12 @@
 {
- "version": "1.7.3",
- "notes": "Правило про число источников в исследованиях — и в лайте",
+ "version": "1.8.0",
+ "notes": "Чтение PDF: doc_read для файлов .pdf (по страницам), browser_read — PDF, открытый в браузере; библиотека pypdf ставится сама",
  "files": [
   {
    "path": "app/agent_lite.py",
    "repo": "files/app/agent_lite.py",
-   "sha256": "d5d89fe68480025335b170e8c7a3e1320277ca22477ac2f216108cfb0d649dd0",
-   "size": 54554
+   "sha256": "39b9e5ae169863e40ad1c3a79d972038cdd371c1d6bd083e944ffe2431924c07",
+   "size": 54757
   },
   {
    "path": "app/app.html",
@@ -23,8 +23,8 @@
   {
    "path": "app/browser.py",
    "repo": "files/app/browser.py",
-   "sha256": "74893cc4085e2958706e40624335de211fb1c6f9dab50d1452b3c2ee976fbd0d",
-   "size": 24526
+   "sha256": "98ad3b62b1ebefe4da18f90db445d87cbd7be5bcab47aa6b38381fb5e9953d2d",
+   "size": 25439
   },
   {
    "path": "app/codetools.py",
@@ -35,8 +35,8 @@
   {
    "path": "app/docs.py",
    "repo": "files/app/docs.py",
-   "sha256": "1d70e38b30247d1f997eb0182bb898ef7edcc4533065a828ea77118d6b7c7b0a",
-   "size": 23092
+   "sha256": "685001962af40c657b72fb9ff6e185823d1be7cfacacbe10a44b476c11a78345",
+   "size": 23291
   },
   {
    "path": "app/handoff.py",
@@ -61,6 +61,12 @@
    "repo": "files/app/ocr.ps1",
    "sha256": "28a30898e65c37cb7732c929b4c1db6fab6dee4fef9a17f49e279fd9572ad810",
    "size": 2419
+  },
+  {
+   "path": "app/pdfread.py",
+   "repo": "files/app/pdfread.py",
+   "sha256": "ff78356f3ba92918ba24ec4b0563062717270b20c35807fc55ecc5cacce83284",
+   "size": 6214
   },
   {
    "path": "app/screen.py",

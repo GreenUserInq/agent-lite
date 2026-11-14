@@ -9,7 +9,7 @@
 # .doc: перед чтением/правкой Word делает из него рабочую копию .docx, после правки сохраняет обратно в .doc.
 # Перед любой правкой — копия файла в <данные>\doc_backups\.
 import datetime, hashlib, json, os, pathlib, re, shutil, subprocess, tempfile
-import settings
+import settings, pdfread
 
 IMPORT_ERROR = ""
 
@@ -264,7 +264,9 @@ def doc_create(path, content, overwrite=False, **_):
     return f"Создан документ: {p} (блоков: {len(made)})" + (f". Прежний — в копии {bak}" if bak else "")
 
 def doc_read(path, start=1, end=0, **_):
-    """Текст документа по блокам с номерами (абзацы и таблицы)."""
+    """Текст документа по блокам с номерами (абзацы и таблицы). PDF — по страницам (start/end — номера страниц)."""
+    if str(path).strip().strip('"').lower().endswith(".pdf"):
+        return pdfread.read_file(path, start, end)
     if _need():
         return _need()
     p = pathlib.Path(str(path).strip().strip('"'))

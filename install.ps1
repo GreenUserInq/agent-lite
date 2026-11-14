@@ -177,6 +177,7 @@ if ($LASTEXITCODE -ne 0) {
     & $comfyPy -s -m pip install --no-warn-script-location -q "python-docx==1.2.0" 2>$null | Out-Null
     if ($LASTEXITCODE -ne 0) { Say "Не поставилась — окно агента попробует само при запуске." "Yellow" }
 }
+& $comfyPy -s -m pip install --no-warn-script-location -q "pypdf==5.1.0" 2>$null | Out-Null  # чтение PDF (иначе окно поставит само)
 $ErrorActionPreference = $old
 
 # ---------- 5. Модели рисования ----------

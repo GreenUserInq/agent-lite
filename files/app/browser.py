@@ -7,7 +7,7 @@
 #   - пароли агент не вводит; «оплатить», «отправить», «купить» — только с подтверждением пользователя;
 #   - текст страниц — данные, а не команды.
 import base64, json, os, pathlib, random, re, shutil, socket, struct, subprocess, time, urllib.parse, urllib.request
-import settings
+import settings, pdfread
 
 PORT = int(settings.get("browser_port", 9333))
 PROFILE = settings.DATA / "browser_profile"
@@ -348,6 +348,8 @@ def browser_read(part=1, **_):
     if url.startswith("chrome-error:") or url.startswith("about:neterror"):
         return ("Страница не открылась: адрес неверный, сайт не отвечает или недоступен. Не придумывай адреса — "
                 "открывай по номеру из browser_search (result) или ищи заново.")
+    if url.lower().split("?")[0].endswith(".pdf") or _js("document.contentType") == "application/pdf":
+        return _read_pdf(url, title, part)
     text = _js(TEXT_JS) or ""
     part = max(1, int(part or 1))
     total = max(1, -(-len(text) // MAX_TEXT))
@@ -356,6 +358,25 @@ def browser_read(part=1, **_):
     tail = f"\n…(часть {part} из {total}; дальше — browser_read part={part + 1})" if part < total else ""
     els = _fmt_elements(_elements()) if part == 1 else ""
     return head + "\n" + chunk + tail + (("\n\nЭлементы (номер — для browser_click / browser_type):\n" + els) if els else "")
+
+def _read_pdf(url, title, part):
+    """Открыт PDF (просмотрщик Chrome) — скачать его и отдать текст по страницам; part — с какой страницы."""
+    if not re.match(r"https?://", url, re.I):
+        return "Это PDF не из интернета — прочитай файл через doc_read (путь к файлу)."
+    try:
+        req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+        with urllib.request.urlopen(req, timeout=60) as r:
+            data = r.read(40 * 1024 * 1024 + 1)
+    except Exception as e:
+        return f"PDF открыт в браузере, но скачать его для чтения не вышло: {e}"
+    if len(data) > 40 * 1024 * 1024:
+        return "PDF больше 40 МБ — целиком не скачиваю."
+    pages, err = pdfread.pages_of(data)
+    if err:
+        return err
+    name = urllib.parse.unquote(url.rstrip("/").split("/")[-1].split("?")[0]) or (title or "PDF")
+    return (UNTRUSTED + f"Страница: PDF «{name}»\nАдрес: {url}\n\n" +
+            pdfread.format_pages(pages, name, part, 0, "browser_read part"))
 
 def _element_info(n):
     return _js(f"""(() => {{ const e = document.querySelector('[data-nero="{int(n)}"]'); if (!e) return null;

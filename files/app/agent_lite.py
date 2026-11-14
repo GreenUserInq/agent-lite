@@ -4,7 +4,7 @@
 import json, pathlib, random, re, time, urllib.error, urllib.parse, urllib.request
 import codetools, screen, hands, browser, docs, handoff  # общие модули с полным агентом (настройки — settings.py лайта)
 
-VERSION = "1.7.3"  # версия окна агента; make_release.py ставит её сам
+VERSION = "1.8.0"  # версия окна агента; make_release.py ставит её сам
 APP = pathlib.Path(__file__).parent
 ROOT = APP.parent
 IMAGES_DIR = ROOT / "images"
@@ -545,7 +545,7 @@ DOCS_DIR = ROOT / "documents"  # документы по умолчанию
 DOC_SYSTEM = f"""
 Документы Word (.docx, .doc): только инструменты doc_*. Новый — doc_create (папку и имя бери из просьбы; не сказали —
 {DOCS_DIR}). Править — сначала doc_read, потом doc_edit: мелкое (слово, число, строка таблицы «a | b») — replace,
-абзац целиком — set, новое — insert/append. PDF — doc_to_pdf; показать пользователю — doc_open.
+абзац целиком — set, новое — insert/append. Сделать PDF — doc_to_pdf; прочитать PDF — doc_read (файл) или browser_read (открытый в браузере); показать пользователю — doc_open.
 «Найди в интернете и сделай документ»: browser_search → browser_open/browser_read → doc_create (в конце «Источник: адрес»)."""
 
 DOC_TOOLS = [
@@ -554,7 +554,7 @@ DOC_TOOLS = [
           "[разрыв страницы]; каждая непустая строка — абзац.",
           {"path": {"type": "string", "description": "полный путь с .docx или .doc"}, "content": S,
            "overwrite": {"type": "boolean"}}, ["path", "content"]),
-    _tool("doc_read", "Прочитать документ Word: блоки с номерами [N].", {"path": S, "start": {"type": "integer"},
+    _tool("doc_read", "Прочитать документ: Word — блоки с номерами [N]; PDF — текст по страницам (start/end — страницы).", {"path": S, "start": {"type": "integer"},
           "end": {"type": "integer"}}, ["path"]),
     _tool("doc_edit", "Изменить документ Word (сначала doc_read). action: replace (old → new по всему документу, и строки таблиц "
           "«a | b | c»), set (абзац n целиком), insert (text после блока n; n=0 — в начало), append (text в конец), "
