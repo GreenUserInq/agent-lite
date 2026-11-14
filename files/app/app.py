@@ -168,6 +168,7 @@ def worker(chat, text):
             meter.note(agent._ctx.get("last"))
             return m.get("content") or ""
 
+        nudges = 0                           # сколько раз модель пообещала «продолжу» без дела
         step = -1
         while True:
             step += 1
@@ -208,6 +209,12 @@ def worker(chat, text):
                 reply = msg["content"].strip()
                 chat.add("assistant", reply, docs=docs_in(reply))  # кнопки «Открыть» для документов из ответа
             if not calls:
+                # «соберу и покажу в следующем ответе» без вызова инструментов — не конец: продолжать сразу
+                if agent.handoff.promised(msg.get("content")) and nudges < agent.handoff.MAX_NUDGES:
+                    nudges += 1
+                    chat.messages.append(agent.handoff.nudge())
+                    chat.add("info", "↻ агент пообещал продолжить — продолжает сразу")
+                    continue
                 break
             for c in calls:
                 name, args = c["function"]["name"], c["function"].get("arguments") or {}

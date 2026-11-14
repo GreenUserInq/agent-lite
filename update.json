@@ -1,11 +1,11 @@
 {
- "version": "1.7.1",
- "notes": "Отчёты с повторяющимися заголовками («Источник:», «Анализ…») больше не обрезаются как «модель повторяется»: петля — только когда повторяется целый кусок текста",
+ "version": "1.7.2",
+ "notes": "Исследования: ищет столько источников, сколько просили (раньше — не больше 2 поисков); если модель пообещала «продолжу в следующем ответе» без дела — продолжает сразу",
  "files": [
   {
    "path": "app/agent_lite.py",
    "repo": "files/app/agent_lite.py",
-   "sha256": "541c02ae426e8da805dcff04b8a114a4349ce2129c4c8bcb79b7cb98cb9aaace",
+   "sha256": "9ba0e96da52f2aca3cffade4e40bb49a52aa8d7a6142c01b123e01191b4ee5cd",
    "size": 54023
   },
   {
@@ -17,8 +17,8 @@
   {
    "path": "app/app.py",
    "repo": "files/app/app.py",
-   "sha256": "38beba63447b5cc06f8142ce6ebff40468aa66bfdf07c11b862ba1f576943aae",
-   "size": 29910
+   "sha256": "129b77cb634570e7813540d521495097a88f1514514e87470ed129cfc6c98165",
+   "size": 30587
   },
   {
    "path": "app/browser.py",
@@ -41,8 +41,8 @@
   {
    "path": "app/handoff.py",
    "repo": "files/app/handoff.py",
-   "sha256": "8d18f69725831450e24342dab31c045441f49203a39364d57c856af069bf3645",
-   "size": 10877
+   "sha256": "a540e9e897e9e5043abf7f60e3b313de907c10b6d4fc6bce28c0d14bce136331",
+   "size": 12746
   },
   {
    "path": "app/hands.py",
