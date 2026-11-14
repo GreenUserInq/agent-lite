@@ -4,7 +4,7 @@
 import json, pathlib, random, re, time, urllib.error, urllib.parse, urllib.request
 import codetools, screen, hands, browser, docs, handoff  # общие модули с полным агентом (настройки — settings.py лайта)
 
-VERSION = "1.8.0"  # версия окна агента; make_release.py ставит её сам
+VERSION = "1.8.1"  # версия окна агента; make_release.py ставит её сам
 APP = pathlib.Path(__file__).parent
 ROOT = APP.parent
 IMAGES_DIR = ROOT / "images"
@@ -546,6 +546,8 @@ DOC_SYSTEM = f"""
 Документы Word (.docx, .doc): только инструменты doc_*. Новый — doc_create (папку и имя бери из просьбы; не сказали —
 {DOCS_DIR}). Править — сначала doc_read, потом doc_edit: мелкое (слово, число, строка таблицы «a | b») — replace,
 абзац целиком — set, новое — insert/append. Сделать PDF — doc_to_pdf; прочитать PDF — doc_read (файл) или browser_read (открытый в браузере); показать пользователю — doc_open.
+Копия PDF в Word («точная копия», «переведи в ворд», «замени в нём …») — pdf_to_word, затем doc_edit replace; НЕ перепечатывай
+PDF своими словами. Большой новый документ — не одним вызовом: doc_create с началом, дальше doc_edit append частями.
 «Найди в интернете и сделай документ»: browser_search → browser_open/browser_read → doc_create (в конце «Источник: адрес»)."""
 
 DOC_TOOLS = [
@@ -561,6 +563,8 @@ DOC_TOOLS = [
           "delete (count блоков с n).",
           {"path": S, "action": {"type": "string", "enum": ["replace", "set", "insert", "append", "delete"]},
            "n": {"type": "integer"}, "text": S, "old": S, "new": S, "count": {"type": "integer"}}, ["path", "action"]),
+    _tool("pdf_to_word", "Сделать из PDF документ Word (.docx) с той же вёрсткой (через Word); потом правки — doc_edit replace. "
+          "out — путь нового файла (пусто — рядом с PDF).", {"path": S, "out": S}, ["path"]),
     _tool("doc_to_pdf", "Сохранить документ Word как PDF рядом (нужен установленный Word).", {"path": S}, ["path"]),
     _tool("doc_open", "Открыть документ у пользователя (Word или программа по умолчанию).", {"path": S}, ["path"]),
 ]
@@ -597,6 +601,7 @@ PC_FUNCS = {
     "control_click_visual": hands.control_click_visual, "control_type": hands.control_type, "control_keys": hands.control_keys,
     "control_scroll": hands.control_scroll, "control_stop": hands.control_stop,
     "doc_create": docs.doc_create, "doc_read": docs.doc_read, "doc_edit": docs.doc_edit, "doc_to_pdf": docs.doc_to_pdf,
+    "pdf_to_word": docs.pdf_to_word,
     "doc_open": doc_open,
 }
 
@@ -701,7 +706,7 @@ def chat(messages, think=False, use_tools=True):
             if looped is not None:
                 msg["content"] = looped + "\n\n…(модель начала повторяться — ответ обрезан. Попроси иначе или «продолжай».)"
             elif r.get("done_reason") == "length":
-                msg["content"] = (msg.get("content") or "") + "\n\n…(ответ слишком длинный — оборван. Напиши «продолжай» — допишу.)"
+                msg["content"] = (msg.get("content") or "") + "\n\n…(ответ слишком длинный — оборван. Длинный документ пиши частями: doc_create с началом, потом doc_edit append. Напиши «продолжай» — допишу.)"
             return msg
         except urllib.error.HTTPError:
             if attempt == 2:
@@ -712,7 +717,7 @@ FUNCS = {"generate_image": generate_image, **CODE_FUNCS, **PC_FUNCS}
 
 def call_allowed(name):
     """Инструмент сейчас включён (модель может позвать выключенный по старой памяти беседы)."""
-    if name.startswith("doc_"):  # документы — всегда
+    if name.startswith("doc_") or name == "pdf_to_word":  # документы — всегда
         return True
     if name in PC_FUNCS and name.startswith("browser_"):
         return CONFIG.get("browser")

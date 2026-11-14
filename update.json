@@ -1,12 +1,12 @@
 {
- "version": "1.8.0",
- "notes": "Чтение PDF: doc_read для файлов .pdf (по страницам), browser_read — PDF, открытый в браузере; библиотека pypdf ставится сама",
+ "version": "1.8.1",
+ "notes": "PDF → Word: инструмент pdf_to_word делает копию PDF в .docx с той же вёрсткой (через Word), правки — doc_edit replace; большие документы — частями",
  "files": [
   {
    "path": "app/agent_lite.py",
    "repo": "files/app/agent_lite.py",
-   "sha256": "39b9e5ae169863e40ad1c3a79d972038cdd371c1d6bd083e944ffe2431924c07",
-   "size": 54757
+   "sha256": "76b840db41aa4f3a0ccd335362c77fb2693d2062f908399b16f0fe2076cc1356",
+   "size": 55621
   },
   {
    "path": "app/app.html",
@@ -35,8 +35,8 @@
   {
    "path": "app/docs.py",
    "repo": "files/app/docs.py",
-   "sha256": "685001962af40c657b72fb9ff6e185823d1be7cfacacbe10a44b476c11a78345",
-   "size": 23291
+   "sha256": "6894ce9bc5ba0b6a801c7e934fa5fbd1c35a2e9edc5528999620eaaa297cc912",
+   "size": 24857
   },
   {
    "path": "app/handoff.py",
@@ -101,8 +101,8 @@
   {
    "path": "app/word.ps1",
    "repo": "files/app/word.ps1",
-   "sha256": "94c14419a38ead55cbff545f6138c131cd6a0ea103d730670111aff9ff42dd58",
-   "size": 1686
+   "sha256": "80de908158a83f2a7e3ee8def9d19c79bbfe3baa6eb134bf6f45a6d7f82c1696",
+   "size": 2928
   },
   {
    "path": "start.bat",

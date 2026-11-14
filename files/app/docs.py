@@ -459,6 +459,30 @@ def doc_edit(path, action, n=0, text="", old="", new="", count=1, **_):
         return f"Не сохранено: {err}. Документ не изменён (копия: {bak})."
     return f"Готово: {p.name}, изменено {done}. Копия до правки: {bak}"
 
+def pdf_to_word(path, out="", **_):
+    """PDF → документ Word (.docx) установленным Word: вёрстка, таблицы и шрифты сохраняются (насколько Word их распознаёт).
+    Дальше копию правят обычным doc_read / doc_edit."""
+    p = pathlib.Path(str(path).strip().strip('"'))
+    if not p.is_file():
+        return f"Файл не найден: {path}"
+    if p.suffix.lower() != ".pdf":
+        return "Это не PDF. Документ Word читается doc_read, сохранить как PDF — doc_to_pdf."
+    dst = pathlib.Path(str(out).strip().strip('"')) if str(out or "").strip() else p.with_suffix(".docx")
+    if dst.suffix.lower() not in (".docx", ".doc"):
+        dst = dst.with_suffix(".docx")
+    if dst.exists():  # существующий файл не затираем — рядом с номером
+        for i in range(2, 100):
+            cand = dst.with_name(f"{dst.stem} ({i}){dst.suffix}")
+            if not cand.exists():
+                dst = cand
+                break
+    dst.parent.mkdir(parents=True, exist_ok=True)
+    err = word_convert(p, dst, dst.suffix.lower().lstrip("."))
+    if err:
+        return f"Ошибка: {err}"
+    return (f"Готово: {dst}\nЭто копия PDF в Word (вёрстка из PDF). Заменить слова, имена, даты — doc_edit action=replace "
+            "(old → new по всему документу); посмотреть, что получилось, — doc_read.")
+
 def doc_to_pdf(path, **_):
     """Сохранить документ как PDF рядом (через Word)."""
     p = pathlib.Path(str(path).strip().strip('"'))
