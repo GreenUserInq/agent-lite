@@ -119,7 +119,9 @@ def read_file(path, start=1, end=0):
     pages, err = pages_of(data)
     if err:
         return err
-    return format_pages(pages, p.name, start, end, "doc_read start")
+    return (format_pages(pages, p.name, start, end, "doc_read start") +
+            "\n(Нужна копия этого PDF в Word с вёрсткой, таблицами и картинками — pdf_to_word, потом doc_edit replace; "
+            "НЕ перепечатывай текст через doc_create.)")
 
 def is_pdf(data, ctype="", url=""):
     return (data or b"")[:5] == b"%PDF-" or "pdf" in (ctype or "").lower() or str(url).lower().split("?")[0].endswith(".pdf")

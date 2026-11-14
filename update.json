@@ -1,11 +1,11 @@
 {
- "version": "1.8.1",
- "notes": "PDF → Word: инструмент pdf_to_word делает копию PDF в .docx с той же вёрсткой (через Word), правки — doc_edit replace; большие документы — частями",
+ "version": "1.8.2",
+ "notes": "При чтении PDF модели подсказано делать копию через pdf_to_word",
  "files": [
   {
    "path": "app/agent_lite.py",
    "repo": "files/app/agent_lite.py",
-   "sha256": "76b840db41aa4f3a0ccd335362c77fb2693d2062f908399b16f0fe2076cc1356",
+   "sha256": "166155beb3c9cc99213a3d826373572914e220e24c589d767365fe07a115f745",
    "size": 55621
   },
   {
@@ -65,8 +65,8 @@
   {
    "path": "app/pdfread.py",
    "repo": "files/app/pdfread.py",
-   "sha256": "ff78356f3ba92918ba24ec4b0563062717270b20c35807fc55ecc5cacce83284",
-   "size": 6214
+   "sha256": "5404dd656ba78b5667b3ae1eea489709e6867f38050e27400497416b97ad28d0",
+   "size": 6472
   },
   {
    "path": "app/screen.py",
